@@ -1,0 +1,53 @@
+# ZÆRØ BOT - Configuração Fly.io
+app = "zaero-bot"
+primary_region = "gru"  # São Paulo, Brazil
+
+[build]
+  # Build com npm install
+  [build.args]
+    NODE_VERSION = "20"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false  # IMPORTANTE: Mantém bot sempre online
+  auto_start_machines = true
+  min_machines_running = 1    # Pelo menos 1 máquina sempre rodando
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 3000
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [[services.tcp_checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512  # 512MB - Mínimo recomendado
+
+# Desabilita métricas para economizar recursos
+[metrics]
+  port = 9091
+  path = "/metrics"
