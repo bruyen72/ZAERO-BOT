@@ -12,7 +12,8 @@ import {
   DisconnectReason,
   Browsers,
   makeCacheableSignalKeyStore,
-  jidDecode
+  jidDecode,
+  delay
 } from '@whiskeysockets/baileys'
 import pino from 'pino'
 import db from '../lib/system/database.js'
@@ -129,11 +130,15 @@ async function startBot(usePairingCode = false, phoneNumber = '') {
       version,
       logger: pino({ level: 'fatal' }),
       printQRInTerminal: !usePairingCode,
-      browser: ['Windows', 'Chrome', '114.0.5735.198'],
-      auth: state,
+      browser: usePairingCode ? Browsers.macOS('Desktop') : Browsers.ubuntu('Chrome'),
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' }))
+      },
       defaultQueryTimeoutMs: undefined,
       markOnlineOnConnect: false,
       generateHighQualityLinkPreview: true,
+      syncFullHistory: false,
       getMessage: async () => ""
     })
 
@@ -171,25 +176,37 @@ async function startBot(usePairingCode = false, phoneNumber = '') {
       // Gerar código de pareamento
       if (qr && usePairingCode && phoneNumber && !pairingCode) {
         if (!client.authState.creds.registered) {
+          // Aumenta delay para 5 segundos para dar tempo da conexão estabilizar
           setTimeout(async () => {
             try {
               const cleanNumber = normalizePhoneNumber(phoneNumber)
               if (!isValidPhoneForPairing(cleanNumber)) {
                 throw new Error('Numero invalido para pareamento. Use DDI + DDD + numero (ex: 5511912345678)')
               }
+
+              console.log('⏳ Aguardando conexão estabilizar...')
+              await new Promise(resolve => setTimeout(resolve, 2000))
+
+              console.log('📞 Solicitando código de pareamento...')
               const code = await client.requestPairingCode(cleanNumber)
               pairingCode = code?.match(/.{1,4}/g)?.join('-') || code
               connectionStatus = 'waiting_for_pairing'
               console.log('✅ Código gerado:', pairingCode)
-              console.log('📱 Digite este código no WhatsApp')
+              console.log('📱 Digite este código no WhatsApp em até 2 minutos')
+              console.log('⚠️ IMPORTANTE: Digite RÁPIDO! O código pode expirar!')
 
               // Inicia timer de 2 minutos para expirar o código
               startPairingCodeTimer()
             } catch (err) {
-              console.error('❌ Erro:', err.message)
+              console.error('❌ Erro ao gerar código:', err.message)
+              if (err.message.includes('429') || err.message.includes('rate')) {
+                console.error('⚠️ Rate limit do WhatsApp! Aguarde alguns minutos e tente novamente.')
+                console.error('💡 Dica: Use QR Code ao invés de código de pareamento (mais confiável)')
+              }
               connectionStatus = 'error'
+              pairingCode = null
             }
-          }, 2000)
+          }, 5000)
         }
       }
 
@@ -201,14 +218,23 @@ async function startBot(usePairingCode = false, phoneNumber = '') {
         const hasActivePairingCode = pairingCode && connectionStatus === 'waiting_for_pairing'
 
         if (shouldReconnect) {
-          console.log('🔄 Finalizando conexão, iniciando sessão...')
           qrCodeData = null
 
           // Mantém código de pareamento visível
           if (!hasActivePairingCode) {
-            setTimeout(() => startBot(false, ''), 3000)
+            console.log('🔄 Finalizando conexão, iniciando sessão em 5s...')
+            setTimeout(() => startBot(false, ''), 5000)
           } else {
-            console.log('⏳ Código de pareamento ativo, aguardando usuário digitar...')
+            console.log('⏳ Código de pareamento ATIVO!')
+            console.log('⏳ Aguardando usuário digitar código no WhatsApp...')
+            console.log('⚠️ NÃO reconectando para não cancelar o código!')
+            // Aguarda 2 minutos (tempo do código expirar) antes de tentar reconectar
+            setTimeout(() => {
+              if (connectionStatus === 'waiting_for_pairing') {
+                console.log('⏱️ Código expirou, reconectando...')
+                startBot(false, '')
+              }
+            }, 120000)
           }
         } else {
           console.log('❌ Desconectado')
