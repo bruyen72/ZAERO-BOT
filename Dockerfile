@@ -8,8 +8,9 @@ LABEL description="WhatsApp Bot com Baileys"
 # Diretório de trabalho
 WORKDIR /app
 
-# Instala dependências do sistema
+# Instala dependências do sistema (INCLUINDO GIT!)
 RUN apk add --no-cache \
+    git \
     ffmpeg \
     python3 \
     make \
@@ -19,7 +20,7 @@ RUN apk add --no-cache \
 COPY package*.json ./
 
 # Instala dependências do Node
-RUN npm install --production
+RUN npm install --omit=dev
 
 # Copia código
 COPY . .
