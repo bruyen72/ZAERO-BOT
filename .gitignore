@@ -1,6 +1,6 @@
 # Dependências
 node_modules/
-package-lock.json
+# package-lock.json ← IMPORTANTE: NÃO ignorar (necessário para Docker)
 
 # Sessões (CREDENCIAIS SENSÍVEIS - NÃO COMMITAR!)
 Sessions/
