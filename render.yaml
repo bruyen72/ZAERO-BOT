@@ -1,13 +1,19 @@
 services:
   - type: web
     name: zaero-bot
-    runtime: node
-    region: frankfurt
+    env: node
+    region: oregon
     plan: free
     buildCommand: npm install
     startCommand: npm run web
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: 3000
     healthCheckPath: /health
     autoDeploy: true
+    disk:
+      name: whatsapp-sessions
+      mountPath: /app/Sessions
+      sizeGB: 1
