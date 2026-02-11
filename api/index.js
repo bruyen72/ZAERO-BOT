@@ -193,7 +193,21 @@ async function startBot(usePairingCode = false, phoneNumber = '') {
 
 // Rotas da API
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'))
+  try {
+    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'))
+  } catch (err) {
+    console.error('Erro ao servir index.html:', err)
+    res.status(500).send('Erro ao carregar página')
+  }
+})
+
+// Health check para Render/Fly.io
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  })
 })
 
 app.get('/api/status', (req, res) => {
@@ -293,9 +307,11 @@ global.loadDatabase = () => {
 global.loadDatabase()
 console.log('✅ Database carregado')
 
-app.listen(PORT, () => {
+// Escuta em 0.0.0.0 para aceitar conexões externas (Render, Fly.io, etc)
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`)
   console.log(`🌐 Acesse: http://localhost:${PORT}`)
+  console.log(`✅ Pronto para receber conexões externas`)
 })
 
 export default app
