@@ -1,26 +1,30 @@
-# Imagem base Node.js 18
-FROM node:18-alpine
+# ===================================================================
+# DOCKERFILE ZAERO-BOT - VERSÃO ROBUSTA
+# Usa Node.js 18 (Debian) que já tem git instalado
+# ===================================================================
 
-# Instalar git (necessário para dependências do GitHub)
-RUN apk add --no-cache git
+FROM node:18
 
 # Definir diretório de trabalho
 WORKDIR /app
 
-# Copiar package.json e package-lock.json
+# Copiar arquivos de dependências
 COPY package*.json ./
 
-# Instalar dependências (usa npm install em vez de npm ci)
+# Instalar dependências de produção
 RUN npm install --omit=dev
 
-# Copiar código do projeto
+# Copiar todo o código do projeto
 COPY . .
 
-# Criar pasta de sessões (será montada como volume)
+# Criar pasta de sessões
 RUN mkdir -p Sessions/Owner
 
-# Expor porta (se usar API web)
+# Expor porta da API (se houver)
 EXPOSE 3000
+
+# Variável de ambiente
+ENV NODE_ENV=production
 
 # Comando de inicialização
 CMD ["node", "index.js"]
