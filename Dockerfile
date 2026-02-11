@@ -1,6 +1,9 @@
 # Imagem base Node.js 18
 FROM node:18-alpine
 
+# Instalar git (necessário para dependências do GitHub)
+RUN apk add --no-cache git
+
 # Definir diretório de trabalho
 WORKDIR /app
 
