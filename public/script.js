@@ -88,6 +88,7 @@ function updateStatus(data) {
             break
 
         case 'code_ready':
+        case 'waiting_for_pairing':
             pulse.className = 'pulse connecting'
             statusText.textContent = '🔑 Código Gerado!'
             statusHelp.textContent = 'Digite o código no WhatsApp agora!'
@@ -104,7 +105,10 @@ function updateStatus(data) {
             statusHelp.textContent = 'Escolha um método abaixo'
             btnDisconnect.classList.add('hidden')
             hideAllLoaders()
-            hideAllContainers()
+            // Só esconde containers se não houver código ou QR ativo
+            if (!code && !qr) {
+                hideAllContainers()
+            }
             disableButtons(false)
             break
 

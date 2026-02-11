@@ -35,6 +35,7 @@ app.use(express.static(path.join(__dirname, '..', 'public')))
 // Estado global
 let qrCodeData = null
 let pairingCode = null
+let pairingCodeTimer = null
 let connectionStatus = 'disconnected'
 let client = null
 let mainHandler = null
@@ -93,6 +94,19 @@ function normalizePhoneNumber(input = '') {
 
 function isValidPhoneForPairing(phone = '') {
   return phone.length >= 12 && phone.length <= 15
+}
+
+// Função para expirar código de pareamento após 2 minutos
+function startPairingCodeTimer() {
+  if (pairingCodeTimer) clearTimeout(pairingCodeTimer)
+
+  pairingCodeTimer = setTimeout(() => {
+    if (connectionStatus === 'code_ready' || connectionStatus === 'waiting_for_pairing') {
+      console.log('⏱️ Código expirado após 2 minutos')
+      pairingCode = null
+      connectionStatus = 'disconnected'
+    }
+  }, 120000) // 2 minutos
 }
 
 // Iniciar bot
@@ -165,9 +179,12 @@ async function startBot(usePairingCode = false, phoneNumber = '') {
               }
               const code = await client.requestPairingCode(cleanNumber)
               pairingCode = code?.match(/.{1,4}/g)?.join('-') || code
-              connectionStatus = 'code_ready'
+              connectionStatus = 'waiting_for_pairing'
               console.log('✅ Código gerado:', pairingCode)
               console.log('📱 Digite este código no WhatsApp')
+
+              // Inicia timer de 2 minutos para expirar o código
+              startPairingCodeTimer()
             } catch (err) {
               console.error('❌ Erro:', err.message)
               connectionStatus = 'error'
@@ -180,21 +197,35 @@ async function startBot(usePairingCode = false, phoneNumber = '') {
         const reason = lastDisconnect?.error?.output?.statusCode
         const shouldReconnect = reason !== DisconnectReason.loggedOut
 
+        // Se há código de pareamento ativo, mantém o status
+        const hasActivePairingCode = pairingCode && connectionStatus === 'waiting_for_pairing'
+
         if (shouldReconnect) {
           console.log('🔄 Finalizando conexão, iniciando sessão...')
           qrCodeData = null
-          // Não limpar pairingCode para manter visível na interface
-          setTimeout(() => startBot(false, ''), 3000) // Reconecta sem limpar sessão
+
+          // Mantém código de pareamento visível
+          if (!hasActivePairingCode) {
+            setTimeout(() => startBot(false, ''), 3000)
+          } else {
+            console.log('⏳ Código de pareamento ativo, aguardando usuário digitar...')
+          }
         } else {
           console.log('❌ Desconectado')
-          connectionStatus = 'disconnected'
-          qrCodeData = null
-          pairingCode = null
+          if (!hasActivePairingCode) {
+            connectionStatus = 'disconnected'
+            qrCodeData = null
+            pairingCode = null
+            if (pairingCodeTimer) clearTimeout(pairingCodeTimer)
+          }
         }
       }
 
       if (connection === 'open') {
         connectionStatus = 'connected'
+        pairingCode = null
+        qrCodeData = null
+        if (pairingCodeTimer) clearTimeout(pairingCodeTimer)
         console.log('✅ WhatsApp conectado!')
       }
     })
@@ -271,6 +302,7 @@ app.post('/api/connect/qr', async (req, res) => {
     connectionStatus = 'connecting'
     qrCodeData = null
     pairingCode = null
+    if (pairingCodeTimer) clearTimeout(pairingCodeTimer)
 
     await startBot(false)
 
@@ -310,6 +342,7 @@ app.post('/api/connect/code', async (req, res) => {
     connectionStatus = 'connecting'
     qrCodeData = null
     pairingCode = null
+    if (pairingCodeTimer) clearTimeout(pairingCodeTimer)
 
     await startBot(true, cleanNumber)
 
