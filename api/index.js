@@ -43,6 +43,7 @@ let mainHandler = null
 let eventsHandler = null
 let smsgHandler = null
 let isInitialConnection = true // ✅ FIX: Previne reconexão antes de autenticar
+let lastSessionClear = 0 // ✅ FIX: Previne limpeza excessiva de sessão
 
 async function loadBotHandlers() {
   if (mainHandler && eventsHandler && smsgHandler) return
@@ -115,10 +116,16 @@ function startPairingCodeTimer() {
 async function startBot(usePairingCode = false, phoneNumber = '', isReconnect = false) {
   try {
     // ⚠️ CRÍTICO: Só limpa sessão em NOVA conexão, não em reconexão!
-    if (!isReconnect) {
+    const timeSinceLastClear = Date.now() - lastSessionClear
+    const shouldClearSession = !isReconnect && timeSinceLastClear > 30000 // 30 segundos
+
+    if (shouldClearSession) {
       console.log('🆕 Nova conexão - limpando sessão antiga')
       clearSession()
+      lastSessionClear = Date.now()
       isInitialConnection = true // ✅ Reset flag para nova conexão
+    } else if (!isReconnect && timeSinceLastClear <= 30000) {
+      console.log('⚠️ Sessão limpa recentemente, pulando limpeza (evita loop)')
     } else {
       console.log('🔄 Reconexão - mantendo sessão existente')
     }
@@ -183,16 +190,19 @@ async function startBot(usePairingCode = false, phoneNumber = '', isReconnect = 
       // Gerar código de pareamento
       if (qr && usePairingCode && phoneNumber && !pairingCode) {
         if (!client.authState.creds.registered) {
-          // Aumenta delay para 5 segundos para dar tempo da conexão estabilizar
+          // ✅ FIX: Reduz delay de 5s → 1s (conexão fechava antes)
           setTimeout(async () => {
             try {
+              // ✅ Verifica se ainda está conectado
+              if (!client || connectionStatus === 'disconnected') {
+                console.error('❌ Cliente desconectado, não pode gerar código')
+                return
+              }
+
               const cleanNumber = normalizePhoneNumber(phoneNumber)
               if (!isValidPhoneForPairing(cleanNumber)) {
                 throw new Error('Numero invalido para pareamento. Use DDI + DDD + numero (ex: 5511912345678)')
               }
-
-              console.log('⏳ Aguardando conexão estabilizar...')
-              await new Promise(resolve => setTimeout(resolve, 2000))
 
               console.log('📞 Solicitando código de pareamento...')
               const code = await client.requestPairingCode(cleanNumber)
@@ -206,14 +216,17 @@ async function startBot(usePairingCode = false, phoneNumber = '', isReconnect = 
               startPairingCodeTimer()
             } catch (err) {
               console.error('❌ Erro ao gerar código:', err.message)
-              if (err.message.includes('429') || err.message.includes('rate')) {
+              if (err.message.includes('Connection Closed') || err.message.includes('closed')) {
+                console.error('⚠️ Conexão fechou antes de gerar código!')
+                console.error('💡 SOLUÇÃO: Use QR Code (mais rápido e confiável)')
+              } else if (err.message.includes('429') || err.message.includes('rate')) {
                 console.error('⚠️ Rate limit do WhatsApp! Aguarde alguns minutos e tente novamente.')
                 console.error('💡 Dica: Use QR Code ao invés de código de pareamento (mais confiável)')
               }
               connectionStatus = 'error'
               pairingCode = null
             }
-          }, 5000)
+          }, 1000) // ✅ FIX: 5000ms → 1000ms
         }
       }
 
@@ -221,32 +234,39 @@ async function startBot(usePairingCode = false, phoneNumber = '', isReconnect = 
         const reason = lastDisconnect?.error?.output?.statusCode
         const shouldReconnect = reason !== DisconnectReason.loggedOut
 
-        // ✅ FIX: Não reconecta na primeira conexão (aguarda autenticação)
-        if (isInitialConnection && !client?.authState?.creds?.registered) {
-          console.log('🔄 Conexão inicial fechada - aguardando QR/código')
-          isInitialConnection = false
-          return
-        }
-
         // Se há código de pareamento ativo, mantém o status
         const hasActivePairingCode = pairingCode && connectionStatus === 'waiting_for_pairing'
+        const hasActiveQR = qrCodeData && connectionStatus === 'qr_ready'
+
+        // ✅ FIX: Não reconecta se está aguardando QR/código do usuário
+        if (isInitialConnection && !client?.authState?.creds?.registered) {
+          if (hasActivePairingCode || hasActiveQR) {
+            console.log('⏳ Aguardando usuário escanear QR ou digitar código...')
+            console.log('⚠️ NÃO reconectando para não cancelar autenticação!')
+            isInitialConnection = false
+            return
+          } else {
+            console.log('🔄 Conexão inicial fechada - tentando reconectar em 3s...')
+            isInitialConnection = false
+            setTimeout(() => startBot(usePairingCode, phoneNumber, true), 3000)
+            return
+          }
+        }
 
         if (shouldReconnect) {
-          qrCodeData = null
-
-          // Mantém código de pareamento visível
-          if (!hasActivePairingCode) {
-            console.log('🔄 Finalizando conexão, iniciando sessão em 5s...')
-            setTimeout(() => startBot(false, '', true), 5000) // ✅ isReconnect = true
+          // Mantém código/QR se estiver ativo
+          if (!hasActivePairingCode && !hasActiveQR) {
+            qrCodeData = null
+            console.log('🔄 Reconectando em 3s...')
+            setTimeout(() => startBot(false, '', true), 3000) // ✅ isReconnect = true
           } else {
-            console.log('⏳ Código de pareamento ATIVO!')
-            console.log('⏳ Aguardando usuário digitar código no WhatsApp...')
-            console.log('⚠️ NÃO reconectando para não cancelar o código!')
-            // Aguarda 2 minutos (tempo do código expirar) antes de tentar reconectar
+            console.log('⏳ QR/Código ATIVO - aguardando usuário...')
+            console.log('⚠️ Reconexão adiada para não cancelar autenticação')
+            // Aguarda 2 minutos antes de reconectar
             setTimeout(() => {
-              if (connectionStatus === 'waiting_for_pairing') {
-                console.log('⏱️ Código expirou, reconectando...')
-                startBot(false, '', true) // ✅ isReconnect = true
+              if (connectionStatus === 'waiting_for_pairing' || connectionStatus === 'qr_ready') {
+                console.log('⏱️ Timeout de autenticação, reconectando...')
+                startBot(false, '', true)
               }
             }, 120000)
           }
