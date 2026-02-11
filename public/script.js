@@ -129,9 +129,21 @@ function updateStatus(data) {
 
         case 'error':
             console.error('❌ [STATUS] Erro na conexão')
-            pulse.className = 'pulse'
-            statusText.textContent = '❌ Erro'
-            statusHelp.textContent = 'Algo deu errado, tente novamente'
+
+            // ⚠️ FIX: Se QR Code existe, mostra mesmo com erro
+            if (qr) {
+                console.warn('⚠️ [FIX] Status = error MAS QR existe! Mostrando QR...')
+                pulse.className = 'pulse connecting'
+                statusText.textContent = '⚠️ QR Pronto (com avisos)'
+                statusHelp.textContent = 'Escaneie rapidamente. Pode haver instabilidade.'
+                qrImage.src = qr
+                qrContainer.classList.remove('hidden')
+                qrLoader.classList.add('hidden')
+            } else {
+                pulse.className = 'pulse'
+                statusText.textContent = '❌ Erro'
+                statusHelp.textContent = 'Algo deu errado, tente novamente'
+            }
             hideAllLoaders()
             disableButtons(false)
             break
