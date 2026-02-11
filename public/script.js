@@ -20,6 +20,25 @@ const btnDisconnect = document.getElementById('btnDisconnect')
 // Estado
 let statusInterval = null
 
+function normalizePhoneNumber(input) {
+    let digits = String(input || '').replace(/\D/g, '')
+    if (!digits) return ''
+
+    if (digits.startsWith('00')) digits = digits.slice(2)
+    digits = digits.replace(/^0+/, '')
+
+    // Caso comum no Brasil: 55 + 0 + DDD + numero.
+    if (digits.startsWith('550')) {
+        digits = `55${digits.slice(3)}`
+    }
+
+    if (!digits.startsWith('55') && (digits.length === 10 || digits.length === 11)) {
+        digits = `55${digits}`
+    }
+
+    return digits
+}
+
 // Iniciar verificação de status
 function startStatusCheck() {
     if (statusInterval) clearInterval(statusInterval)
@@ -139,12 +158,13 @@ async function connectViaCode() {
         }
 
         // Validar número
-        const cleanNumber = phoneNumber.replace(/\D/g, '')
-        if (cleanNumber.length < 10) {
-            alert('Número inválido!\n\nUse apenas números com código do país.\nExemplo: 5511999999999')
+        const cleanNumber = normalizePhoneNumber(phoneNumber)
+        if (cleanNumber.length < 12 || cleanNumber.length > 15) {
+            alert('Numero invalido.\n\nUse DDI + DDD + numero (sem + e sem espacos).\nExemplo: 5511912345678')
             phoneInput.focus()
             return
         }
+        phoneInput.value = cleanNumber
 
         btnCode.disabled = true
         btnQR.disabled = true
@@ -157,7 +177,7 @@ async function connectViaCode() {
         const response = await fetch('/api/connect/code', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phoneNumber })
+            body: JSON.stringify({ phoneNumber: cleanNumber })
         })
 
         const data = await response.json()

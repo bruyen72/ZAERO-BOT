@@ -71,6 +71,30 @@ function clearSession() {
   return true
 }
 
+function normalizePhoneNumber(input = '') {
+  let digits = String(input).replace(/\D/g, '')
+  if (!digits) return ''
+
+  if (digits.startsWith('00')) digits = digits.slice(2)
+  digits = digits.replace(/^0+/, '')
+
+  // Common BR formatting issue: 55 + 0 + DDD + number.
+  if (digits.startsWith('550')) {
+    digits = `55${digits.slice(3)}`
+  }
+
+  // Fallback for local BR numbers without country code.
+  if (!digits.startsWith('55') && (digits.length === 10 || digits.length === 11)) {
+    digits = `55${digits}`
+  }
+
+  return digits
+}
+
+function isValidPhoneForPairing(phone = '') {
+  return phone.length >= 12 && phone.length <= 15
+}
+
 // Iniciar bot
 async function startBot(usePairingCode = false, phoneNumber = '') {
   try {
@@ -135,7 +159,10 @@ async function startBot(usePairingCode = false, phoneNumber = '') {
         if (!client.authState.creds.registered) {
           setTimeout(async () => {
             try {
-              const cleanNumber = phoneNumber.replace(/\D/g, '')
+              const cleanNumber = normalizePhoneNumber(phoneNumber)
+              if (!isValidPhoneForPairing(cleanNumber)) {
+                throw new Error('Numero invalido para pareamento. Use DDI + DDD + numero (ex: 5511912345678)')
+              }
               const code = await client.requestPairingCode(cleanNumber)
               pairingCode = code?.match(/.{1,4}/g)?.join('-') || code
               connectionStatus = 'code_ready'
@@ -272,7 +299,13 @@ app.post('/api/connect/code', async (req, res) => {
     }
 
     // Limpar e normalizar número
-    const cleanNumber = phoneNumber.replace(/\D/g, '')
+    const cleanNumber = normalizePhoneNumber(phoneNumber)
+    if (!isValidPhoneForPairing(cleanNumber)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Numero invalido. Use DDI + DDD + numero, sem + e sem espacos. Exemplo: 5511912345678'
+      })
+    }
 
     connectionStatus = 'connecting'
     qrCodeData = null
