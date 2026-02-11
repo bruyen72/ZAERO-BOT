@@ -1,101 +1,92 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>✧ ZÆRØ BOT ✧ - Conexão WhatsApp</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZARO BOT - Bot Anime para WhatsApp</title>
+  <meta name="description" content="ZARO BOT: bot anime para WhatsApp com busca, wallpapers, stickers e mais." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700;900&family=Rajdhani:wght@400;500;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="script.js" defer></script>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>✧ ZÆRØ BOT ✧</h1>
-            <p class="subtitle">Conecte seu WhatsApp ao bot</p>
-        </header>
+  <div id="particles"></div>
 
-        <div class="status-card">
-            <div class="status-indicator" id="statusIndicator">
-                <div class="pulse"></div>
-                <span id="statusText">Desconectado</span>
-            </div>
+  <main class="wrap">
+    <section class="sec hero">
+      <div class="bg">
+        <img class="bg-image" src="assets/anime-bg.jpg" alt="" />
+        <div class="dark"></div>
+      </div>
+      <div class="scan"></div>
+      <div class="glow"></div>
+
+      <div class="container">
+        <div data-r>
+          <div class="logo">
+            <img src="assets/logo-itachi.png" alt="ZARO BOT" />
+          </div>
+          <h1 class="title delay-120" data-r>ZARO BOT</h1>
+          <p class="sub delay-240" data-r>Bot Anime para WhatsApp</p>
+          <div class="btn-group delay-360" data-r>
+            <button id="btnConnect" class="btn btn-primary" type="button">🔌 Conectar Bot</button>
+            <button id="wa" class="btn btn-secondary" type="button">💬 Chat no WhatsApp</button>
+          </div>
         </div>
+      </div>
+    </section>
 
-        <div class="connection-methods">
-            <div class="method-card" id="qrMethod">
-                <div class="method-header">
-                    <h2>📱 QR Code</h2>
-                    <p>Escanear com WhatsApp</p>
-                </div>
-                <div class="method-content">
-                    <div id="qrContainer" class="qr-container hidden">
-                        <img id="qrImage" alt="QR Code">
-                        <p class="qr-instructions">
-                            1. Abra o WhatsApp no seu celular<br>
-                            2. Toque em <strong>Mais opções</strong> ou <strong>Configurações</strong><br>
-                            3. Toque em <strong>Aparelhos conectados</strong><br>
-                            4. Toque em <strong>Conectar um aparelho</strong><br>
-                            5. Aponte seu celular para esta tela
-                        </p>
-                    </div>
-                    <div id="qrLoader" class="loader hidden">
-                        <div class="spinner"></div>
-                        <p>Gerando QR Code...</p>
-                    </div>
-                    <button class="btn btn-primary" id="btnQR" onclick="connectViaQR()">
-                        Gerar QR Code
-                    </button>
-                </div>
-            </div>
+    <section class="sec">
+      <div class="bg">
+        <img class="bg-image bg-opacity-16" src="assets/anime-characters-bg.jpg" alt="" />
+        <div class="dark"></div>
+      </div>
+      <div class="line"></div>
+      <div class="container">
+        <h2 class="st" data-r>Funcionalidades</h2>
+        <p class="sp delay-80" data-r>Tudo que voce precisa para mergulhar no mundo anime direto no WhatsApp.</p>
+        <div id="features" class="grid feat"></div>
+      </div>
+    </section>
 
-            <div class="method-card" id="codeMethod">
-                <div class="method-header">
-                    <h2>🔢 Código de Pareamento</h2>
-                    <p>Código de 8 dígitos</p>
-                </div>
-                <div class="method-content">
-                    <div id="codeContainer" class="code-container hidden">
-                        <div class="pairing-code" id="pairingCode"></div>
-                        <p class="code-instructions">
-                            1. Abra o WhatsApp no seu celular<br>
-                            2. Toque em <strong>Mais opções</strong> > <strong>Aparelhos conectados</strong><br>
-                            3. Toque em <strong>Conectar um aparelho</strong><br>
-                            4. Toque em <strong>Conectar com número de telefone</strong><br>
-                            5. Digite o código acima
-                        </p>
-                    </div>
-                    <div id="codeLoader" class="loader hidden">
-                        <div class="spinner"></div>
-                        <p>Gerando código...</p>
-                    </div>
-                    <div class="phone-input">
-                        <label for="phoneNumber">Número do WhatsApp:</label>
-                        <input
-                            type="tel"
-                            id="phoneNumber"
-                            placeholder="+55 11 99999-9999"
-                            maxlength="20"
-                        >
-                        <small>Exemplo: +5511999999999</small>
-                    </div>
-                    <button class="btn btn-secondary" id="btnCode" onclick="connectViaCode()">
-                        Gerar Código
-                    </button>
-                </div>
-            </div>
-        </div>
+    <section class="sec">
+      <div class="bg">
+        <img class="bg-image bg-opacity-10 bg-mirror" src="assets/anime-bg.jpg" alt="" />
+        <div class="dark"></div>
+      </div>
+      <div class="line"></div>
+      <div class="container">
+        <h2 class="st" data-r>Galeria Anime</h2>
+        <p class="sp delay-80" data-r>Explore o universo anime</p>
+        <div id="gallery" class="grid gal"></div>
+      </div>
+    </section>
 
-        <div class="actions">
-            <button class="btn btn-danger hidden" id="btnDisconnect" onclick="disconnect()">
-                Desconectar
-            </button>
-        </div>
+    <section class="sec">
+      <div class="bg">
+        <img class="bg-image bg-opacity-10" src="assets/anime-characters-bg.jpg" alt="" />
+        <div class="dark"></div>
+      </div>
+      <div class="line"></div>
+      <div class="container">
+        <h2 class="st" data-r>Como Usar</h2>
+        <p class="sp delay-80" data-r>Tres passos simples para comecar</p>
+        <div id="steps" class="grid steps"></div>
+      </div>
+    </section>
 
-        <footer>
-            <p>✧ ZÆRØ BOT ✧ | Made with ❤️</p>
-            <p class="warning">⚠️ Nunca compartilhe seus códigos de conexão!</p>
-        </footer>
-    </div>
-
-    <script src="script.js"></script>
+    <footer class="footer">
+      <div class="fimg">
+        <img src="assets/logo-itachi.png" alt="ZARO BOT" />
+      </div>
+      <h3 class="footer-title st">ZARO BOT</h3>
+      <p class="footer-copy">O melhor bot anime para WhatsApp. Conteudo anime direto no seu chat.</p>
+    </footer>
+  </main>
 </body>
 </html>

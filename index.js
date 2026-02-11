@@ -76,6 +76,10 @@ const toDigitsId = (value = "") => DIGITS(String(value).split("@")[0])
 // ✅ CORREÇÃO 1: Flag para controlar reconexões (igual ao BOTRENAN)
 let shouldRestart = true
 
+// Variáveis para interface web
+let currentQR = null
+let pairingCodeNumber = null
+
 function getReservedMainNumbers() {
   const reserved = new Set()
   const add = (value) => {
@@ -207,10 +211,13 @@ async function startBot() {
   client.sendMessage(jid, { text: text, ...options }, { quoted })
   client.ev.on("connection.update", async (update) => {
     const { qr, connection, lastDisconnect, isNewLogin, receivedPendingNotifications, } = update
-    
+
     if (qr != 0 && qr != undefined || methodCodeQR) {
     if (opcion == '1' || methodCodeQR) {
+      // Armazenar QR para API web
+      currentQR = qr
       console.log(chalk.green.bold("[ ✿ ] Escanea este código QR"));
+      console.log(chalk.cyan(`📱 Ou acesse: http://localhost:${PORT || 3000}/connect`));
       qrcode.generate(qr, { small: true });
     }}
 
@@ -274,6 +281,8 @@ async function startBot() {
          const userJid = jidNormalizedUser(client.user.id)
          const userName = client.user.name || "Desconhecido"
          console.log(chalk.green.bold(`[ ✿ ]  Conectado a: ${userName}`))
+         // Limpar QR code após conexão
+         currentQR = null
     }
     if (isNewLogin) {
       log.info("Nuevo dispositivo detectado")
@@ -334,3 +343,215 @@ async function init() {
 
 // Inicia o bot
 init()
+
+// ===================================================================
+// SERVIDOR WEB - INTERFACE DE CONEXÃO
+// ===================================================================
+import express from 'express'
+import cors from 'cors'
+import QRCode from 'qrcode'
+import { fileURLToPath } from 'url'
+import { dirname, join } from 'path'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
+const app = express()
+const PORT = process.env.PORT || 3000
+
+// Middleware
+app.use(cors())
+app.use(express.json())
+app.use(express.static(join(__dirname, 'public')))
+
+// ===================================================================
+// ROTAS DA INTERFACE WEB
+// ===================================================================
+
+// Página principal de conexão
+app.get('/connect', (req, res) => {
+  res.sendFile(join(__dirname, 'public', 'connect.html'))
+})
+
+// Redirecionar raiz para landing page
+app.get('/', (req, res) => {
+  res.sendFile(join(__dirname, 'public', 'index.html'))
+})
+
+// ===================================================================
+// API ENDPOINTS
+// ===================================================================
+
+// Status da conexão
+app.get('/api/status', (req, res) => {
+  try {
+    const connected = global.client?.user?.id ? true : false
+    const userInfo = {
+      connected,
+      number: connected ? global.client.user.id.split(':')[0] : null,
+      name: connected ? global.client.user.name : null,
+      timestamp: Date.now()
+    }
+
+    res.json(userInfo)
+  } catch (error) {
+    res.json({
+      connected: false,
+      error: error.message
+    })
+  }
+})
+
+// Gerar QR Code
+app.post('/api/qr', async (req, res) => {
+  try {
+    // Se já tem QR code armazenado, retornar
+    if (currentQR) {
+      const qrDataURL = await QRCode.toDataURL(currentQR)
+      return res.json({
+        success: true,
+        qr: qrDataURL,
+        message: 'QR Code gerado com sucesso'
+      })
+    }
+
+    // Aguardar QR code ser gerado (máximo 10 segundos)
+    const qrPromise = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Timeout ao gerar QR Code'))
+      }, 10000)
+
+      const checkQR = setInterval(() => {
+        if (currentQR) {
+          clearInterval(checkQR)
+          clearTimeout(timeout)
+          resolve(currentQR)
+        }
+      }, 500)
+    })
+
+    const qr = await qrPromise
+    const qrDataURL = await QRCode.toDataURL(qr)
+
+    res.json({
+      success: true,
+      qr: qrDataURL,
+      message: 'QR Code gerado com sucesso'
+    })
+
+  } catch (error) {
+    console.error('Erro ao gerar QR Code:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao gerar QR Code: ' + error.message
+    })
+  }
+})
+
+// Gerar código de pareamento
+app.post('/api/pairing-code', async (req, res) => {
+  try {
+    const { phoneNumber } = req.body
+
+    if (!phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Número de telefone é obrigatório'
+      })
+    }
+
+    // Validar número
+    const cleanNumber = phoneNumber.replace(/\D/g, '')
+    if (cleanNumber.length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'Número de telefone inválido'
+      })
+    }
+
+    // Normalizar número
+    pairingCodeNumber = normalizePhoneForPairing(cleanNumber)
+
+    // Se o bot não está conectado, solicitar código
+    if (!global.client?.user?.id) {
+      try {
+        const code = await global.client.requestPairingCode(pairingCodeNumber)
+        const formattedCode = code?.match(/.{1,4}/g)?.join('-') || code
+
+        res.json({
+          success: true,
+          code: code,
+          formattedCode: formattedCode,
+          message: 'Código gerado com sucesso'
+        })
+      } catch (error) {
+        throw new Error('Erro ao solicitar código: ' + error.message)
+      }
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Bot já está conectado'
+      })
+    }
+
+  } catch (error) {
+    console.error('Erro ao gerar código:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao gerar código: ' + error.message
+    })
+  }
+})
+
+// Desconectar bot
+app.post('/api/disconnect', async (req, res) => {
+  try {
+    if (global.client) {
+      await global.client.logout()
+
+      // Limpar sessão
+      try {
+        fs.rmSync('./Sessions/Owner', { recursive: true, force: true })
+      } catch (err) {
+        console.error('Erro ao apagar sessão:', err)
+      }
+
+      res.json({
+        success: true,
+        message: 'Bot desconectado com sucesso'
+      })
+
+      // Reiniciar bot após 2 segundos
+      setTimeout(() => startBot(), 2000)
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Bot não está conectado'
+      })
+    }
+  } catch (error) {
+    console.error('Erro ao desconectar:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao desconectar: ' + error.message
+    })
+  }
+})
+
+// Informações do bot
+app.get('/api/info', (req, res) => {
+  res.json({
+    name: 'ZÆRØ BOT',
+    version: '2.0',
+    status: global.client?.user?.id ? 'online' : 'offline',
+    uptime: process.uptime(),
+    commands: 529
+  })
+})
+
+// Iniciar servidor
+app.listen(PORT, () => {
+  console.log(chalk.green(`\n🌐 Servidor web rodando em: http://localhost:${PORT}`))
+  console.log(chalk.cyan(`📱 Interface de conexão: http://localhost:${PORT}/connect`))
+  console.log(chalk.gray(`─`.repeat(50)))
+})

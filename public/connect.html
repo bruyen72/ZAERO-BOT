@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conectar Bot - ZÆRØ BOT</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700;900&family=Rajdhani:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="connect.css">
+</head>
+<body>
+  <div id="particles"></div>
+
+  <main class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo-container">
+        <img src="assets/logo-itachi.png" alt="ZÆRØ BOT" class="logo">
+      </div>
+      <h1 class="title">ZÆRØ BOT</h1>
+      <p class="subtitle">Sistema de Conexão WhatsApp</p>
+    </header>
+
+    <!-- Status Indicator -->
+    <div class="status-bar">
+      <div class="status-indicator" id="statusIndicator">
+        <span class="status-dot"></span>
+        <span class="status-text" id="statusText">Aguardando conexão...</span>
+      </div>
+    </div>
+
+    <!-- Connection Method Selection -->
+    <div class="connection-methods" id="methodSelection">
+      <h2 class="section-title">Escolha o Método de Conexão</h2>
+      <p class="section-description">Selecione como deseja conectar seu WhatsApp ao bot</p>
+
+      <div class="method-cards">
+        <!-- QR Code Method -->
+        <button class="method-card" id="btnQRCode" data-method="qr">
+          <div class="method-icon">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"/>
+              <rect x="14" y="3" width="7" height="7"/>
+              <rect x="3" y="14" width="7" height="7"/>
+              <rect x="14" y="14" width="7" height="7"/>
+              <line x1="5" y1="5" x2="5" y2="5"/>
+              <line x1="16" y1="5" x2="16" y2="5"/>
+              <line x1="5" y1="16" x2="5" y2="16"/>
+              <line x1="16" y1="16" x2="16" y2="16"/>
+            </svg>
+          </div>
+          <h3 class="method-title">QR Code</h3>
+          <p class="method-description">Escaneie o código QR com seu WhatsApp</p>
+          <div class="method-badge">Recomendado</div>
+        </button>
+
+        <!-- Pairing Code Method -->
+        <button class="method-card" id="btnPairingCode" data-method="code">
+          <div class="method-icon">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="5" y="2" width="14" height="20" rx="2"/>
+              <line x1="12" y1="18" x2="12" y2="18"/>
+              <path d="M8 6h8M8 10h5"/>
+            </svg>
+          </div>
+          <h3 class="method-title">Código de Pareamento</h3>
+          <p class="method-description">Use um código de 8 dígitos</p>
+          <div class="method-badge secondary">Alternativo</div>
+        </button>
+      </div>
+    </div>
+
+    <!-- QR Code Display -->
+    <div class="connection-panel hidden" id="qrPanel">
+      <button class="btn-back" id="btnBackFromQR">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        Voltar
+      </button>
+
+      <h2 class="section-title">Escaneie o QR Code</h2>
+      <p class="section-description">Abra o WhatsApp no seu celular e escaneie o código abaixo</p>
+
+      <div class="qr-container" id="qrContainer">
+        <div class="qr-loading" id="qrLoading">
+          <div class="spinner"></div>
+          <p>Gerando QR Code...</p>
+        </div>
+        <div class="qr-display hidden" id="qrDisplay">
+          <div class="qr-code" id="qrCode"></div>
+          <button class="btn-refresh" id="btnRefreshQR">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+            </svg>
+            Atualizar QR Code
+          </button>
+        </div>
+      </div>
+
+      <div class="instructions">
+        <h3>Como escanear:</h3>
+        <ol>
+          <li>Abra o WhatsApp no seu celular</li>
+          <li>Toque em <strong>Mais opções</strong> ou <strong>Configurações</strong></li>
+          <li>Toque em <strong>Aparelhos conectados</strong></li>
+          <li>Toque em <strong>Conectar um aparelho</strong></li>
+          <li>Aponte seu celular para esta tela para escanear o código</li>
+        </ol>
+      </div>
+    </div>
+
+    <!-- Pairing Code Input -->
+    <div class="connection-panel hidden" id="codePanel">
+      <button class="btn-back" id="btnBackFromCode">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        Voltar
+      </button>
+
+      <h2 class="section-title">Código de Pareamento</h2>
+      <p class="section-description">Digite seu número de WhatsApp para receber o código</p>
+
+      <div class="phone-input-container">
+        <label for="phoneNumber" class="input-label">Número do WhatsApp</label>
+        <div class="input-wrapper">
+          <input
+            type="tel"
+            id="phoneNumber"
+            class="phone-input"
+            placeholder="+55 11 98765-4321"
+            maxlength="20"
+          >
+          <button class="btn-generate" id="btnGenerateCode">Gerar Código</button>
+        </div>
+        <p class="input-hint">Digite com código do país (ex: +55 para Brasil)</p>
+      </div>
+
+      <div class="pairing-code-display hidden" id="pairingCodeDisplay">
+        <h3 class="code-title">Seu código de pareamento:</h3>
+        <div class="pairing-code" id="pairingCode">
+          <span class="code-segment">----</span>
+          <span class="code-separator">-</span>
+          <span class="code-segment">----</span>
+        </div>
+        <p class="code-description">Digite este código no WhatsApp Web ou Desktop</p>
+      </div>
+
+      <div class="instructions">
+        <h3>Como usar o código:</h3>
+        <ol>
+          <li>Digite seu número de WhatsApp acima</li>
+          <li>Clique em <strong>Gerar Código</strong></li>
+          <li>Abra o WhatsApp Web ou Desktop</li>
+          <li>Digite o código de 8 dígitos exibido acima</li>
+          <li>Aguarde a conexão ser estabelecida</li>
+        </ol>
+      </div>
+    </div>
+
+    <!-- Connected State -->
+    <div class="connection-panel hidden" id="connectedPanel">
+      <div class="success-animation">
+        <svg class="checkmark" viewBox="0 0 52 52">
+          <circle class="checkmark-circle" cx="26" cy="26" r="25" fill="none"/>
+          <path class="checkmark-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
+        </svg>
+      </div>
+
+      <h2 class="section-title success">Conectado com Sucesso!</h2>
+      <p class="section-description">Seu bot está online e pronto para uso</p>
+
+      <div class="connected-info">
+        <div class="info-item">
+          <span class="info-label">Número:</span>
+          <span class="info-value" id="connectedNumber">+55 11 98765-4321</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Nome:</span>
+          <span class="info-value" id="connectedName">Usuário</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Status:</span>
+          <span class="info-value status-online">Online</span>
+        </div>
+      </div>
+
+      <div class="action-buttons">
+        <button class="btn primary" id="btnDashboard">
+          Ir para Dashboard
+        </button>
+        <button class="btn secondary" id="btnDisconnect">
+          Desconectar
+        </button>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="connect.js"></script>
+</body>
+</html>

@@ -1,220 +1,156 @@
-﻿// Elementos do DOM
-const statusIndicator = document.getElementById('statusIndicator')
-const statusText = document.getElementById('statusText')
-const pulse = document.querySelector('.pulse')
+const features = [
+  ["SRCH", "Busca de Anime", "Pesquise qualquer anime e receba informacoes completas."],
+  ["IMG", "Wallpapers", "Wallpapers HD de todos os animes populares."],
+  ["STK", "Stickers", "Crie e receba stickers anime incriveis."],
+  ["CHAR", "Personagens", "Informacoes detalhadas de personagens anime."],
+  ["EPI", "Episodios", "Acompanhe novos episodios e temporadas."],
+  ["MUS", "Openings", "Ouva e descubra openings e endings."],
+  ["TOP", "Rankings", "Veja os animes mais populares do momento."],
+  ["FAST", "Rapido", "Respostas instantaneas para todos os comandos."],
+];
 
-const qrContainer = document.getElementById('qrContainer')
-const qrImage = document.getElementById('qrImage')
-const qrLoader = document.getElementById('qrLoader')
-const btnQR = document.getElementById('btnQR')
+const gallery = [
+  ["Naruto", "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=400&h=300&fit=crop"],
+  ["Dragon Ball", "https://images.unsplash.com/photo-1613376023733-0a73315d9b06?w=400&h=300&fit=crop"],
+  ["One Piece", "https://images.unsplash.com/photo-1607604276583-3e2ef5cc0303?w=400&h=300&fit=crop"],
+  ["Attack on Titan", "https://images.unsplash.com/photo-1541562232579-512a21360020?w=400&h=300&fit=crop"],
+  ["Demon Slayer", "https://images.unsplash.com/photo-1560972550-aba3456b5564?w=400&h=300&fit=crop"],
+  ["Jujutsu Kaisen", "https://images.unsplash.com/photo-1618336753974-aae8e04506aa?w=400&h=300&fit=crop"],
+];
 
-const codeContainer = document.getElementById('codeContainer')
-const pairingCodeEl = document.getElementById('pairingCode')
-const codeLoader = document.getElementById('codeLoader')
-const phoneInput = document.getElementById('phoneNumber')
-const btnCode = document.getElementById('btnCode')
+const steps = [
+  ["01", "APP", "Abra o WhatsApp", "Abra seu WhatsApp no celular ou computador."],
+  ["02", "CHAT", "Adicione o Bot", "Clique no botao acima e inicie uma conversa."],
+  ["03", "GO", "Use os Comandos", "Digite os comandos e receba conteudo anime."],
+];
 
-const btnDisconnect = document.getElementById('btnDisconnect')
+function renderFeatures() {
+  const root = document.getElementById("features");
+  if (!root) {
+    return;
+  }
 
-// Estado
-let statusInterval = null
-
-// Iniciar verificação de status
-function startStatusCheck() {
-    if (statusInterval) clearInterval(statusInterval)
-
-    statusInterval = setInterval(async () => {
-        try {
-            const response = await fetch('/api/status')
-            const data = await response.json()
-
-            updateStatus(data)
-        } catch (err) {
-            console.error('Erro ao verificar status:', err)
-        }
-    }, 2000) // Verifica a cada 2 segundos
+  root.innerHTML = features
+    .map(
+      (f, i) =>
+        `<article class="card" data-r style="--d:${i * 70}ms"><div class="i">${f[0]}</div><h3>${f[1]}</h3><p>${f[2]}</p></article>`,
+    )
+    .join("");
 }
 
-// Atualizar status visual
-function updateStatus(data) {
-    const { status, qr, code } = data
+function renderGallery() {
+  const root = document.getElementById("gallery");
+  if (!root) {
+    return;
+  }
 
-    switch (status) {
-        case 'connected':
-            pulse.className = 'pulse connected'
-            statusText.textContent = 'Conectado ✓'
-            btnDisconnect.classList.remove('hidden')
-            hideAllLoaders()
-            hideAllContainers()
-            disableButtons(false)
-            break
-
-        case 'connecting':
-            pulse.className = 'pulse connecting'
-            statusText.textContent = 'Conectando...'
-            btnDisconnect.classList.add('hidden')
-            break
-
-        case 'qr_ready':
-            pulse.className = 'pulse connecting'
-            statusText.textContent = 'QR Code pronto - Escaneie'
-            if (qr) {
-                qrImage.src = qr
-                qrContainer.classList.remove('hidden')
-                qrLoader.classList.add('hidden')
-            }
-            break
-
-        case 'code_ready':
-            pulse.className = 'pulse connecting'
-            statusText.textContent = 'Código pronto - Digite no WhatsApp'
-            if (code) {
-                pairingCodeEl.textContent = code
-                codeContainer.classList.remove('hidden')
-                codeLoader.classList.add('hidden')
-            }
-            break
-
-        case 'disconnected':
-            pulse.className = 'pulse'
-            statusText.textContent = 'Desconectado'
-            btnDisconnect.classList.add('hidden')
-            hideAllLoaders()
-            hideAllContainers()
-            disableButtons(false)
-            break
-
-        case 'error':
-            pulse.className = 'pulse'
-            statusText.textContent = 'Erro na conexão'
-            hideAllLoaders()
-            disableButtons(false)
-            break
-    }
+  root.innerHTML = gallery
+    .map(
+      (g, i) =>
+        `<article class="gitem" data-r style="--d:${i * 90}ms"><img src="${g[1]}" alt="${g[0]}" loading="lazy"><div class="ov"><span>${g[0]}</span></div></article>`,
+    )
+    .join("");
 }
 
-// Conectar via QR Code
-async function connectViaQR() {
-    try {
-        btnQR.disabled = true
-        btnCode.disabled = true
-        qrLoader.classList.remove('hidden')
-        qrContainer.classList.add('hidden')
+function renderSteps() {
+  const root = document.getElementById("steps");
+  if (!root) {
+    return;
+  }
 
-        const response = await fetch('/api/connect/qr', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        })
-
-        const data = await response.json()
-
-        if (!data.success) {
-            throw new Error(data.error || 'Erro ao conectar')
-        }
-
-        console.log('QR Code sendo gerado...')
-    } catch (err) {
-        alert('Erro ao gerar QR Code: ' + err.message)
-        qrLoader.classList.add('hidden')
-        btnQR.disabled = false
-        btnCode.disabled = false
-    }
+  root.innerHTML = steps
+    .map(
+      (s, i) =>
+        `<article class="card step" data-r style="--d:${i * 140}ms"><span class="n">${s[0]}</span><div class="i i-center">${s[1]}</div><h3>${s[2]}</h3><p>${s[3]}</p></article>`,
+    )
+    .join("");
 }
 
-// Conectar via Código
-async function connectViaCode() {
-    try {
-        const phoneNumber = phoneInput.value.trim()
+function setupWhatsAppButton() {
+  const button = document.getElementById("wa");
+  if (!button) {
+    return;
+  }
 
-        if (!phoneNumber) {
-            alert('Por favor, insira o número do WhatsApp')
-            phoneInput.focus()
-            return
-        }
-
-        btnCode.disabled = true
-        btnQR.disabled = true
-        codeLoader.classList.remove('hidden')
-        codeContainer.classList.add('hidden')
-
-        const response = await fetch('/api/connect/code', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phoneNumber })
-        })
-
-        const data = await response.json()
-
-        if (!data.success) {
-            throw new Error(data.error || 'Erro ao gerar código')
-        }
-
-        console.log('Código sendo gerado...')
-    } catch (err) {
-        alert('Erro ao gerar código: ' + err.message)
-        codeLoader.classList.add('hidden')
-        btnCode.disabled = false
-        btnQR.disabled = false
-    }
+  button.addEventListener("click", () => {
+    window.open("https://wa.me/", "_blank", "noopener");
+  });
 }
 
-// Desconectar
-async function disconnect() {
-    if (!confirm('Tem certeza que deseja desconectar o bot?')) {
-        return
+function setupConnectButton() {
+  const button = document.getElementById("btnConnect");
+  if (!button) {
+    return;
+  }
+
+  button.addEventListener("click", () => {
+    window.location.href = "/connect";
+  });
+}
+
+function setupParticles() {
+  const particlesRoot = document.getElementById("particles");
+  if (!particlesRoot) {
+    return;
+  }
+
+  const colors = ["#ff1919", "#ff5b1a", "#ff8c1a", "#ff3f3f", "#e31212"];
+
+  for (let i = 0; i < 50; i += 1) {
+    const particle = document.createElement("span");
+    const size = Math.random() * 6 + 2;
+    const alpha = Math.floor((Math.random() * 0.7 + 0.2) * 255)
+      .toString(16)
+      .padStart(2, "0");
+    const color = colors[Math.floor(Math.random() * colors.length)];
+
+    particle.className = "particle";
+    particle.style.left = `${Math.random() * 100}%`;
+    particle.style.width = `${size}px`;
+    particle.style.height = `${size}px`;
+    particle.style.animationDuration = `${Math.random() * 8 + 5}s`;
+    particle.style.animationDelay = `${Math.random() * 10}s`;
+    particle.style.background = `radial-gradient(circle, ${color}${alpha}, transparent 70%)`;
+
+    if (size > 5) {
+      particle.style.filter = "blur(1px)";
     }
 
-    try {
-        btnDisconnect.disabled = true
+    particlesRoot.appendChild(particle);
+  }
+}
 
-        const response = await fetch('/api/disconnect', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        })
+function setupRevealAnimation() {
+  const targets = document.querySelectorAll("[data-r]");
 
-        const data = await response.json()
+  if (!("IntersectionObserver" in window)) {
+    targets.forEach((target) => target.classList.add("v"));
+    return;
+  }
 
-        if (data.success) {
-            alert('Bot desconectado com sucesso!')
-            location.reload()
-        } else {
-            throw new Error(data.error || 'Erro ao desconectar')
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("v");
+          observer.unobserve(entry.target);
         }
-    } catch (err) {
-        alert('Erro ao desconectar: ' + err.message)
-        btnDisconnect.disabled = false
-    }
+      });
+    },
+    { threshold: 0.15 },
+  );
+
+  targets.forEach((target) => observer.observe(target));
 }
 
-// Helpers
-function hideAllLoaders() {
-    qrLoader.classList.add('hidden')
-    codeLoader.classList.add('hidden')
+function init() {
+  renderFeatures();
+  renderGallery();
+  renderSteps();
+  setupWhatsAppButton();
+  setupConnectButton();
+  setupParticles();
+  setupRevealAnimation();
 }
 
-function hideAllContainers() {
-    qrContainer.classList.add('hidden')
-    codeContainer.classList.add('hidden')
-}
-
-function disableButtons(disabled) {
-    btnQR.disabled = disabled
-    btnCode.disabled = disabled
-}
-
-// Formatar input de telefone
-phoneInput.addEventListener('input', (e) => {
-    let value = e.target.value.replace(/\D/g, '')
-    e.target.value = value
-})
-
-// Iniciar ao carregar página
-window.addEventListener('load', () => {
-    startStatusCheck()
-    console.log('✧ ZÆRØ BOT ✧ - Interface carregada')
-})
-
-// Limpar interval ao fechar página
-window.addEventListener('beforeunload', () => {
-    if (statusInterval) clearInterval(statusInterval)
-})
+init();
