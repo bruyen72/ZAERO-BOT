@@ -130,6 +130,9 @@ CMD ["node", "index.js"]
 ### ❌ Erro 3: "npm error spawn git ENOENT"
 ✅ **Resolvido:** Usar `node:18` em vez de `node:18-alpine`
 
+### ❌ Erro 4: "The current environment doesn't support interactive reading from TTY"
+✅ **Resolvido:** Detecção automática de ambiente não-interativo + QR code automático em produção
+
 ---
 
 ## 🔧 CONFIGURAÇÕES FINAIS

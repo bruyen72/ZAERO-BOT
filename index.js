@@ -135,15 +135,25 @@ if (methodCodeQR) {
 } else if (methodCode) {
   opcion = "2";
 } else if (!fs.existsSync("./Sessions/Owner/creds.json")) {
-  opcion = readlineSync.question(chalk.bold.white("\nSeleccione una opción:\n") + chalk.blueBright("1. Con código QR\n") + chalk.cyan("2. Con código de texto de 8 dígitos\n--> "));
-  while (!/^[1-2]$/.test(opcion)) {
-    console.log(chalk.bold.redBright(`No se permiten numeros que no sean 1 o 2, tampoco letras o símbolos especiales.`));
-    opcion = readlineSync.question("--> ");
-  }
-  if (opcion === "2") {
-    console.log(chalk.bold.redBright(`\nPor favor, Ingrese el número de WhatsApp.\n${chalk.bold.yellowBright("Ejemplo: +57301******")}\n${chalk.bold.magentaBright('---> ')} `));
-    phoneInput = readlineSync.question("");
-    phoneNumber = normalizePhoneForPairing(phoneInput);
+  // ✅ CORREÇÃO 8: Detectar ambiente não-interativo (Render, Docker, etc)
+  const isInteractive = process.stdin.isTTY && process.stdout.isTTY;
+
+  if (!isInteractive) {
+    // Ambiente de produção (Render, Docker): usar QR code automaticamente
+    opcion = "1";
+    console.log(chalk.yellow("🤖 Ambiente não-interativo detectado. Usando QR Code automaticamente."));
+  } else {
+    // Ambiente local/terminal: perguntar ao usuário
+    opcion = readlineSync.question(chalk.bold.white("\nSeleccione una opción:\n") + chalk.blueBright("1. Con código QR\n") + chalk.cyan("2. Con código de texto de 8 dígitos\n--> "));
+    while (!/^[1-2]$/.test(opcion)) {
+      console.log(chalk.bold.redBright(`No se permiten numeros que no sean 1 o 2, tampoco letras o símbolos especiales.`));
+      opcion = readlineSync.question("--> ");
+    }
+    if (opcion === "2") {
+      console.log(chalk.bold.redBright(`\nPor favor, Ingrese el número de WhatsApp.\n${chalk.bold.yellowBright("Ejemplo: +57301******")}\n${chalk.bold.magentaBright('---> ')} `));
+      phoneInput = readlineSync.question("");
+      phoneNumber = normalizePhoneForPairing(phoneInput);
+    }
   }
 }
 
