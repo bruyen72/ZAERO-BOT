@@ -42,6 +42,7 @@ let client = null
 let mainHandler = null
 let eventsHandler = null
 let smsgHandler = null
+let isInitialConnection = true // ✅ FIX: Previne reconexão antes de autenticar
 
 async function loadBotHandlers() {
   if (mainHandler && eventsHandler && smsgHandler) return
@@ -117,6 +118,7 @@ async function startBot(usePairingCode = false, phoneNumber = '', isReconnect = 
     if (!isReconnect) {
       console.log('🆕 Nova conexão - limpando sessão antiga')
       clearSession()
+      isInitialConnection = true // ✅ Reset flag para nova conexão
     } else {
       console.log('🔄 Reconexão - mantendo sessão existente')
     }
@@ -219,6 +221,13 @@ async function startBot(usePairingCode = false, phoneNumber = '', isReconnect = 
         const reason = lastDisconnect?.error?.output?.statusCode
         const shouldReconnect = reason !== DisconnectReason.loggedOut
 
+        // ✅ FIX: Não reconecta na primeira conexão (aguarda autenticação)
+        if (isInitialConnection && !client?.authState?.creds?.registered) {
+          console.log('🔄 Conexão inicial fechada - aguardando QR/código')
+          isInitialConnection = false
+          return
+        }
+
         // Se há código de pareamento ativo, mantém o status
         const hasActivePairingCode = pairingCode && connectionStatus === 'waiting_for_pairing'
 
@@ -253,11 +262,12 @@ async function startBot(usePairingCode = false, phoneNumber = '', isReconnect = 
       }
 
       if (connection === 'open') {
+        isInitialConnection = false // ✅ Marca como autenticado
         connectionStatus = 'connected'
         pairingCode = null
         qrCodeData = null
         if (pairingCodeTimer) clearTimeout(pairingCodeTimer)
-        console.log('✅ WhatsApp conectado!')
+        console.log('✅ WhatsApp conectado com sucesso!')
       }
     })
 
