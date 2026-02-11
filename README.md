@@ -233,7 +233,7 @@ Este projeto está sob a licença MIT. Veja [LICENSE](LICENSE) para mais detalhe
 
 ## 👨‍💻 Autor
 
-**The-King-Destroy**
+**✧ ZÆRØ BOT ✧**
 
 ---
 
