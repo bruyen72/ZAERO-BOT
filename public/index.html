@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>✧ ZÆRØ BOT ✧ - Conexão WhatsApp</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>✧ ZÆRØ BOT ✧</h1>
+            <p class="subtitle">Conecte seu WhatsApp ao bot</p>
+        </header>
+
+        <div class="status-card">
+            <div class="status-indicator" id="statusIndicator">
+                <div class="pulse"></div>
+                <span id="statusText">Desconectado</span>
+            </div>
+        </div>
+
+        <div class="connection-methods">
+            <div class="method-card" id="qrMethod">
+                <div class="method-header">
+                    <h2>📱 QR Code</h2>
+                    <p>Escanear com WhatsApp</p>
+                </div>
+                <div class="method-content">
+                    <div id="qrContainer" class="qr-container hidden">
+                        <img id="qrImage" alt="QR Code">
+                        <p class="qr-instructions">
+                            1. Abra o WhatsApp no seu celular<br>
+                            2. Toque em <strong>Mais opções</strong> ou <strong>Configurações</strong><br>
+                            3. Toque em <strong>Aparelhos conectados</strong><br>
+                            4. Toque em <strong>Conectar um aparelho</strong><br>
+                            5. Aponte seu celular para esta tela
+                        </p>
+                    </div>
+                    <div id="qrLoader" class="loader hidden">
+                        <div class="spinner"></div>
+                        <p>Gerando QR Code...</p>
+                    </div>
+                    <button class="btn btn-primary" id="btnQR" onclick="connectViaQR()">
+                        Gerar QR Code
+                    </button>
+                </div>
+            </div>
+
+            <div class="method-card" id="codeMethod">
+                <div class="method-header">
+                    <h2>🔢 Código de Pareamento</h2>
+                    <p>Código de 8 dígitos</p>
+                </div>
+                <div class="method-content">
+                    <div id="codeContainer" class="code-container hidden">
+                        <div class="pairing-code" id="pairingCode"></div>
+                        <p class="code-instructions">
+                            1. Abra o WhatsApp no seu celular<br>
+                            2. Toque em <strong>Mais opções</strong> > <strong>Aparelhos conectados</strong><br>
+                            3. Toque em <strong>Conectar um aparelho</strong><br>
+                            4. Toque em <strong>Conectar com número de telefone</strong><br>
+                            5. Digite o código acima
+                        </p>
+                    </div>
+                    <div id="codeLoader" class="loader hidden">
+                        <div class="spinner"></div>
+                        <p>Gerando código...</p>
+                    </div>
+                    <div class="phone-input">
+                        <label for="phoneNumber">Número do WhatsApp:</label>
+                        <input
+                            type="tel"
+                            id="phoneNumber"
+                            placeholder="+55 11 99999-9999"
+                            maxlength="20"
+                        >
+                        <small>Exemplo: +5511999999999</small>
+                    </div>
+                    <button class="btn btn-secondary" id="btnCode" onclick="connectViaCode()">
+                        Gerar Código
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button class="btn btn-danger hidden" id="btnDisconnect" onclick="disconnect()">
+                Desconectar
+            </button>
+        </div>
+
+        <footer>
+            <p>✧ ZÆRØ BOT ✧ | Made with ❤️</p>
+            <p class="warning">⚠️ Nunca compartilhe seus códigos de conexão!</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
