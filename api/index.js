@@ -111,10 +111,15 @@ function startPairingCodeTimer() {
 }
 
 // Iniciar bot
-async function startBot(usePairingCode = false, phoneNumber = '') {
+async function startBot(usePairingCode = false, phoneNumber = '', isReconnect = false) {
   try {
-    // Limpar sessão antiga automaticamente
-    clearSession()
+    // ⚠️ CRÍTICO: Só limpa sessão em NOVA conexão, não em reconexão!
+    if (!isReconnect) {
+      console.log('🆕 Nova conexão - limpando sessão antiga')
+      clearSession()
+    } else {
+      console.log('🔄 Reconexão - mantendo sessão existente')
+    }
 
     await loadBotHandlers()
 
@@ -223,7 +228,7 @@ async function startBot(usePairingCode = false, phoneNumber = '') {
           // Mantém código de pareamento visível
           if (!hasActivePairingCode) {
             console.log('🔄 Finalizando conexão, iniciando sessão em 5s...')
-            setTimeout(() => startBot(false, ''), 5000)
+            setTimeout(() => startBot(false, '', true), 5000) // ✅ isReconnect = true
           } else {
             console.log('⏳ Código de pareamento ATIVO!')
             console.log('⏳ Aguardando usuário digitar código no WhatsApp...')
@@ -232,7 +237,7 @@ async function startBot(usePairingCode = false, phoneNumber = '') {
             setTimeout(() => {
               if (connectionStatus === 'waiting_for_pairing') {
                 console.log('⏱️ Código expirou, reconectando...')
-                startBot(false, '')
+                startBot(false, '', true) // ✅ isReconnect = true
               }
             }, 120000)
           }
@@ -330,7 +335,7 @@ app.post('/api/connect/qr', async (req, res) => {
     pairingCode = null
     if (pairingCodeTimer) clearTimeout(pairingCodeTimer)
 
-    await startBot(false)
+    await startBot(false, '', false) // ✅ Nova conexão - limpa sessão
 
     res.json({
       success: true,
@@ -370,7 +375,7 @@ app.post('/api/connect/code', async (req, res) => {
     pairingCode = null
     if (pairingCodeTimer) clearTimeout(pairingCodeTimer)
 
-    await startBot(true, cleanNumber)
+    await startBot(true, cleanNumber, false) // ✅ Nova conexão - limpa sessão
 
     res.json({
       success: true,
