@@ -1,0 +1,301 @@
+import '../settings.js'
+import express from 'express'
+import cors from 'cors'
+import path from 'path'
+import { fileURLToPath } from 'url'
+import fs from 'fs'
+import qrcode from 'qrcode'
+import {
+  makeWASocket,
+  useMultiFileAuthState,
+  fetchLatestBaileysVersion,
+  DisconnectReason,
+  Browsers,
+  makeCacheableSignalKeyStore,
+  jidDecode
+} from '@whiskeysockets/baileys'
+import pino from 'pino'
+import main from '../main.js'
+import events from '../commands/events.js'
+import { smsg } from '../lib/message.js'
+import db from '../lib/system/database.js'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+const app = express()
+const PORT = process.env.PORT || 3000
+
+// Middleware
+app.use(cors())
+app.use(express.json())
+app.use(express.static(path.join(__dirname, '..', 'public')))
+
+// Estado global
+let qrCodeData = null
+let pairingCode = null
+let connectionStatus = 'disconnected'
+let client = null
+
+// Função para limpar sessão
+function clearSession() {
+  const sessionPath = path.join(__dirname, '..', 'Sessions', 'Owner')
+  if (fs.existsSync(sessionPath)) {
+    try {
+      fs.rmSync(sessionPath, { recursive: true, force: true })
+      console.log('✅ Sessão limpa automaticamente')
+      return true
+    } catch (err) {
+      console.error('❌ Erro ao limpar sessão:', err)
+      return false
+    }
+  }
+  return true
+}
+
+// Iniciar bot
+async function startBot(usePairingCode = false, phoneNumber = '') {
+  try {
+    // Limpar sessão antiga automaticamente
+    clearSession()
+
+    const sessionPath = path.join(__dirname, '..', 'Sessions', 'Owner')
+    if (!fs.existsSync(sessionPath)) {
+      fs.mkdirSync(sessionPath, { recursive: true })
+    }
+
+    const { state, saveCreds } = await useMultiFileAuthState(sessionPath)
+    const { version } = await fetchLatestBaileysVersion()
+
+    client = makeWASocket({
+      version,
+      logger: pino({ level: 'fatal' }),
+      printQRInTerminal: !usePairingCode,
+      browser: ['Windows', 'Chrome', '114.0.5735.198'],
+      auth: state,
+      defaultQueryTimeoutMs: undefined,
+      markOnlineOnConnect: false,
+      generateHighQualityLinkPreview: true,
+      getMessage: async () => ""
+    })
+
+    // ⚡ Adiciona função decodeJid ao client
+    client.decodeJid = (jid) => {
+      if (!jid) return jid
+      if (/:\d+@/gi.test(jid)) {
+        let decode = jidDecode(jid) || {}
+        return ((decode.user && decode.server && decode.user + "@" + decode.server) || jid)
+      } else return jid
+    }
+
+    // ⚡ Define modo público (bot responde a todos)
+    client.public = true
+
+    // ⚡ Registra event listeners de boas-vindas, despedidas, etc
+    try {
+      await events(client, {})
+    } catch (err) {
+      console.error('⚠️ Erro ao registrar eventos:', err.message)
+    }
+
+    client.ev.on('creds.update', saveCreds)
+
+    client.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect, qr } = update
+
+      // Gerar QR Code
+      if (qr && !usePairingCode) {
+        qrCodeData = await qrcode.toDataURL(qr)
+        connectionStatus = 'qr_ready'
+        console.log('✅ QR Code pronto')
+      }
+
+      // Gerar código de pareamento
+      if (qr && usePairingCode && phoneNumber && !pairingCode) {
+        if (!client.authState.creds.registered) {
+          setTimeout(async () => {
+            try {
+              const cleanNumber = phoneNumber.replace(/\D/g, '')
+              const code = await client.requestPairingCode(cleanNumber)
+              pairingCode = code?.match(/.{1,4}/g)?.join('-') || code
+              connectionStatus = 'code_ready'
+              console.log('✅ Código gerado:', pairingCode)
+              console.log('📱 Digite este código no WhatsApp')
+            } catch (err) {
+              console.error('❌ Erro:', err.message)
+              connectionStatus = 'error'
+            }
+          }, 2000)
+        }
+      }
+
+      if (connection === 'close') {
+        const reason = lastDisconnect?.error?.output?.statusCode
+        const shouldReconnect = reason !== DisconnectReason.loggedOut
+
+        if (shouldReconnect) {
+          console.log('🔄 Finalizando conexão, iniciando sessão...')
+          qrCodeData = null
+          // Não limpar pairingCode para manter visível na interface
+          setTimeout(() => startBot(false, ''), 3000) // Reconecta sem limpar sessão
+        } else {
+          console.log('❌ Desconectado')
+          connectionStatus = 'disconnected'
+          qrCodeData = null
+          pairingCode = null
+        }
+      }
+
+      if (connection === 'open') {
+        connectionStatus = 'connected'
+        console.log('✅ WhatsApp conectado!')
+      }
+    })
+
+    // ⚡ ADICIONA HANDLER DE MENSAGENS
+    client.ev.on('messages.upsert', async ({ messages }) => {
+      try {
+        let m = messages[0]
+        if (!m.message) return
+        m.message = Object.keys(m.message)[0] === 'ephemeralMessage'
+          ? m.message.ephemeralMessage.message
+          : m.message
+        if (m.key && m.key.remoteJid === 'status@broadcast') return
+        if (!client.public && !m.key.fromMe && messages.type === 'notify') return
+        if (m.key.id.startsWith('BAE5') && m.key.id.length === 16) return
+
+        console.log('📨 Mensagem recebida, processando com smsg...')
+        m = await smsg(client, m)
+        console.log('✅ smsg processado com sucesso')
+
+        // ⚡ Processa mensagem via main.js (com otimizações)
+        console.log('🔄 Enviando para main.js...')
+        main(client, m, messages)
+        console.log('✅ main.js processado')
+      } catch (err) {
+        if (err.message && err.message.includes('decrypt')) return
+        if (err.name && err.name.includes('MessageCounterError')) return
+        console.error('❌ Erro ao processar mensagem:', err.message)
+        console.error('Stack:', err.stack)
+      }
+    })
+
+    // Define cliente global para acesso de outros módulos
+    global.client = client
+
+    return client
+  } catch (err) {
+    console.error('❌ Erro ao iniciar bot:', err)
+    connectionStatus = 'error'
+    throw err
+  }
+}
+
+// Rotas da API
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'))
+})
+
+app.get('/api/status', (req, res) => {
+  res.json({
+    status: connectionStatus,
+    qr: qrCodeData,
+    code: pairingCode,
+    timestamp: new Date().toISOString()
+  })
+})
+
+app.post('/api/connect/qr', async (req, res) => {
+  try {
+    connectionStatus = 'connecting'
+    qrCodeData = null
+    pairingCode = null
+
+    await startBot(false)
+
+    res.json({
+      success: true,
+      message: 'Conectando via QR Code...',
+      session_cleared: true
+    })
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    })
+  }
+})
+
+app.post('/api/connect/code', async (req, res) => {
+  try {
+    const { phoneNumber } = req.body
+
+    if (!phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        error: 'Número de telefone é obrigatório'
+      })
+    }
+
+    // Limpar e normalizar número
+    const cleanNumber = phoneNumber.replace(/\D/g, '')
+
+    connectionStatus = 'connecting'
+    qrCodeData = null
+    pairingCode = null
+
+    await startBot(true, cleanNumber)
+
+    res.json({
+      success: true,
+      message: 'Gerando código de pareamento...',
+      session_cleared: true
+    })
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    })
+  }
+})
+
+app.post('/api/disconnect', async (req, res) => {
+  try {
+    if (client) {
+      await client.logout()
+    }
+    clearSession()
+    connectionStatus = 'disconnected'
+    qrCodeData = null
+    pairingCode = null
+
+    res.json({
+      success: true,
+      message: 'Bot desconectado e sessão limpa'
+    })
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    })
+  }
+})
+
+// ⚡ Carrega database antes de iniciar servidor
+global.loadDatabase = () => {
+  if (!global.db) global.db = { data: {} }
+  if (!global.db.data) global.db.data = {}
+  if (!global.db.data.users) global.db.data.users = {}
+  if (!global.db.data.chats) global.db.data.chats = {}
+  if (!global.db.data.settings) global.db.data.settings = {}
+}
+
+global.loadDatabase()
+console.log('✅ Database carregado')
+
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor rodando na porta ${PORT}`)
+  console.log(`🌐 Acesse: http://localhost:${PORT}`)
+})
+
+export default app

@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(copy:*)",
+      "Bash(where:*)",
+      "Bash(dir:*)",
+      "Bash(findstr:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(npm install:*)",
+      "Bash(find:*)",
+      "Bash(powershell -ExecutionPolicy Bypass -File remove-bom.ps1:*)",
+      "Bash(netstat:*)",
+      "Bash(curl:*)",
+      "Bash(taskkill:*)",
+      "Bash(timeout:*)",
+      "WebSearch",
+      "WebFetch(domain:baileys.wiki)",
+      "WebFetch(domain:github.com)",
+      "Bash(start-web.bat << 'EOF'\n@echo off\nchcp 65001 >nul\ncls\necho ========================================\necho  ZAERO BOT - Interface Web\necho ========================================\necho.\n\necho [1/2] Limpando porta 3000...\nfor /f \"tokens=5\" %%a in \\('netstat -ano ^| findstr :3000 ^| findstr LISTENING'\\) do \\(\n    taskkill /F /PID %%a >nul 2>&1\n\\)\n\ntimeout /t 1 /nobreak >nul\n\necho [2/2] Iniciando servidor...\necho.\nnode api/index.js\nEOF)",
+      "Bash(node --check:*)",
+      "Bash(chmod:*)",
+      "Bash(bash:*)",
+      "Bash(node -p:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

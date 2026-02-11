@@ -1,0 +1,59 @@
+# Dependências
+node_modules/
+package-lock.json
+
+# Sessões do WhatsApp (NUNCA commitar!)
+Sessions/
+*.data.json
+creds.json
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Ambiente
+.env
+.env.local
+.env.production
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Backups
+backups/
+*.bak
+*.bak2
+*.backup
+
+# Temporários
+tmp/
+temp/
+*.tmp
+
+# Database local
+lib/database.json
+*.db
+*.sqlite
+
+# Build
+dist/
+build/
+
+# Vercel
+.vercel
+.vercel/
+
+# Cache
+.cache/
+*.cache

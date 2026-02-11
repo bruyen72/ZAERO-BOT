@@ -1,0 +1,15 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+Sessions/*
+!Sessions/.gitkeep
+*.md
+.vscode
+.DS_Store
+backups
+*.bak
+*.bak2
+.vercel
+.vercelignore
