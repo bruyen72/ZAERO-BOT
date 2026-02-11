@@ -41,7 +41,7 @@ h1, h2, h3 {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 1;
+  z-index: 5;
   overflow: hidden;
 }
 
@@ -52,10 +52,45 @@ h1, h2, h3 {
   animation: float linear infinite;
 }
 
+/* ===================================================================
+   BACKGROUND LAYERS - Camadas de Fundo
+   =================================================================== */
+
+/* Camada 1 (Fundo - Atrás) - anime-bg.jpg */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url('assets/anime-bg.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0.12;
+  z-index: 0;
+  pointer-events: none;
+  filter: blur(2px);
+}
+
+/* Camada 2 (Frente) - anime-characters-bg.jpg */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url('assets/anime-characters-bg.jpg');
+  background-size: cover;
+  background-position: center bottom;
+  background-repeat: no-repeat;
+  opacity: 0.08;
+  z-index: 1;
+  pointer-events: none;
+  background-blend-mode: overlay;
+  mix-blend-mode: soft-light;
+}
+
 /* Container */
 .container {
   position: relative;
-  z-index: 2;
+  z-index: 10;
   max-width: 900px;
   margin: 0 auto;
   padding: 40px 20px;
@@ -693,6 +728,38 @@ h1, h2, h3 {
   }
 }
 
+/* ===================================================================
+   EFEITO PARALLAX (Opcional)
+   Adicione class="parallax-effect" no body para ativar
+   =================================================================== */
+body.parallax-effect::before {
+  transform: translateZ(-1px) scale(1.5);
+  will-change: transform;
+}
+
+body.parallax-effect::after {
+  transform: translateZ(-0.5px) scale(1.2);
+  will-change: transform;
+}
+
+/* Animação suave das camadas */
+@keyframes float-bg {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-10px) scale(1.02);
+  }
+}
+
+body::before {
+  animation: float-bg 20s ease-in-out infinite;
+}
+
+body::after {
+  animation: float-bg 15s ease-in-out infinite reverse;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .title {
@@ -727,5 +794,14 @@ h1, h2, h3 {
 
   .code-separator {
     transform: rotate(90deg);
+  }
+
+  /* Ajustar opacidade das camadas em mobile */
+  body::before {
+    opacity: 0.08;
+  }
+
+  body::after {
+    opacity: 0.05;
   }
 }
