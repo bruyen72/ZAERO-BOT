@@ -15,16 +15,17 @@ import {
   jidDecode
 } from '@whiskeysockets/baileys'
 import pino from 'pino'
-import main from '../main.js'
-import events from '../commands/events.js'
-import { smsg } from '../lib/message.js'
 import db from '../lib/system/database.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const app = express()
-const PORT = process.env.PORT || 3000
+const DEFAULT_PORT = 3000
+const rawPort = process.env.PORT
+const parsedPort = Number.parseInt(rawPort || `${DEFAULT_PORT}`, 10)
+const PORT = Number.isNaN(parsedPort) ? DEFAULT_PORT : parsedPort
+const HOST = '0.0.0.0'
 
 // Middleware
 app.use(cors())
@@ -36,6 +37,23 @@ let qrCodeData = null
 let pairingCode = null
 let connectionStatus = 'disconnected'
 let client = null
+let mainHandler = null
+let eventsHandler = null
+let smsgHandler = null
+
+async function loadBotHandlers() {
+  if (mainHandler && eventsHandler && smsgHandler) return
+
+  const [mainModule, eventsModule, messageModule] = await Promise.all([
+    import('../main.js'),
+    import('../commands/events.js'),
+    import('../lib/message.js')
+  ])
+
+  mainHandler = mainModule.default
+  eventsHandler = eventsModule.default
+  smsgHandler = messageModule.smsg
+}
 
 // Função para limpar sessão
 function clearSession() {
@@ -58,6 +76,8 @@ async function startBot(usePairingCode = false, phoneNumber = '') {
   try {
     // Limpar sessão antiga automaticamente
     clearSession()
+
+    await loadBotHandlers()
 
     const sessionPath = path.join(__dirname, '..', 'Sessions', 'Owner')
     if (!fs.existsSync(sessionPath)) {
@@ -93,7 +113,7 @@ async function startBot(usePairingCode = false, phoneNumber = '') {
 
     // ⚡ Registra event listeners de boas-vindas, despedidas, etc
     try {
-      await events(client, {})
+      await eventsHandler(client, {})
     } catch (err) {
       console.error('⚠️ Erro ao registrar eventos:', err.message)
     }
@@ -165,12 +185,12 @@ async function startBot(usePairingCode = false, phoneNumber = '') {
         if (m.key.id.startsWith('BAE5') && m.key.id.length === 16) return
 
         console.log('📨 Mensagem recebida, processando com smsg...')
-        m = await smsg(client, m)
+        m = await smsgHandler(client, m)
         console.log('✅ smsg processado com sucesso')
 
         // ⚡ Processa mensagem via main.js (com otimizações)
         console.log('🔄 Enviando para main.js...')
-        main(client, m, messages)
+        mainHandler(client, m, messages)
         console.log('✅ main.js processado')
       } catch (err) {
         if (err.message && err.message.includes('decrypt')) return
@@ -308,10 +328,15 @@ global.loadDatabase()
 console.log('✅ Database carregado')
 
 // Escuta em 0.0.0.0 para aceitar conexões externas (Render, Fly.io, etc)
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, HOST, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`)
   console.log(`🌐 Acesse: http://localhost:${PORT}`)
   console.log(`✅ Pronto para receber conexões externas`)
+})
+
+server.on('error', (err) => {
+  console.error('âŒ Falha ao abrir porta HTTP:', err)
+  process.exit(1)
 })
 
 export default app
