@@ -53,6 +53,18 @@ class LoginSystem {
     const form = document.getElementById('loginForm');
     const togglePassword = document.getElementById('togglePassword');
     const passwordInput = document.getElementById('password');
+    const btnShowLogin = document.getElementById('btnShowLogin');
+    const btnBackToWelcome = document.getElementById('btnBackToWelcome');
+
+    // Show login form
+    btnShowLogin?.addEventListener('click', () => {
+      this.showLoginScreen();
+    });
+
+    // Back to welcome
+    btnBackToWelcome?.addEventListener('click', () => {
+      this.showWelcomeScreen();
+    });
 
     // Form submit
     form?.addEventListener('submit', (e) => {
@@ -78,6 +90,24 @@ class LoginSystem {
         `;
       }
     });
+  }
+
+  // ===================================================================
+  // SCREEN MANAGEMENT
+  // ===================================================================
+  showWelcomeScreen() {
+    document.getElementById('welcomeScreen').style.display = 'block';
+    document.getElementById('loginScreen').style.display = 'none';
+    this.hideError();
+  }
+
+  showLoginScreen() {
+    document.getElementById('welcomeScreen').style.display = 'none';
+    document.getElementById('loginScreen').style.display = 'block';
+    // Focus on username field
+    setTimeout(() => {
+      document.getElementById('username')?.focus();
+    }, 100);
   }
 
   // ===================================================================
