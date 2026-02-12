@@ -134,10 +134,11 @@ body::before {
 
 /* Camada 2 (FRENTE - Personagens Visíveis) - anime-characters-bg.jpg */
 body::after {
+  margin-top: 900px;
   content: '';
   position: fixed;
   inset: 0;
-  background-image: url('assets/anime-characters-bg.jpg');
+  background-image: url('assets/CK.png');
   background-size: cover;
   background-position: center bottom;
   background-repeat: no-repeat;

@@ -10,12 +10,12 @@ const features = [
 ];
 
 const gallery = [
-  ["Naruto", "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=400&h=300&fit=crop"],
-  ["Dragon Ball", "https://images.unsplash.com/photo-1613376023733-0a73315d9b06?w=400&h=300&fit=crop"],
-  ["One Piece", "https://images.unsplash.com/photo-1607604276583-3e2ef5cc0303?w=400&h=300&fit=crop"],
-  ["Attack on Titan", "https://images.unsplash.com/photo-1541562232579-512a21360020?w=400&h=300&fit=crop"],
-  ["Demon Slayer", "https://images.unsplash.com/photo-1560972550-aba3456b5564?w=400&h=300&fit=crop"],
-  ["Jujutsu Kaisen", "https://images.unsplash.com/photo-1618336753974-aae8e04506aa?w=400&h=300&fit=crop"],
+  "assets/am.png",
+  "assets/animebot.png",
+  "assets/botmulher.png",
+  "assets/grupotext.png",
+  "assets/pessoa.png",
+  "assets/pc.png",
 ];
 
 const steps = [
@@ -47,7 +47,7 @@ function renderGallery() {
   root.innerHTML = gallery
     .map(
       (g, i) =>
-        `<article class="gitem" data-r style="--d:${i * 90}ms"><img src="${g[1]}" alt="${g[0]}" loading="lazy"><div class="ov"><span>${g[0]}</span></div></article>`,
+        `<article class="gitem" data-r style="--d:${i * 90}ms"><img src="${g}" alt="Imagem da galeria anime" loading="lazy"></article>`,
     )
     .join("");
 }

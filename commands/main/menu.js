@@ -5,7 +5,7 @@ import { bodyMenu, menuObject } from '../../lib/commands.js'
 import { apiCache } from '../../lib/cache.js'
 
 function normalizeBotDisplayName(name = '') {
-  const fallback = 'Z�R� BOT'
+  const fallback = 'ZARO BOT'
   const clean = String(name || '').trim()
   if (!clean) return fallback
   const legacyNames = new Set(['yuki', 'yuki suou', 'alya', 'alya san'])
@@ -90,7 +90,7 @@ export default {
       const cat = Object.keys(categoryAlias).find((key) => categoryAlias[key].map(normalize).includes(input))
 
       if (args[0] && !cat) {
-        return m.reply(`?? A categoria *${args[0]}* n�o existe.\n\n?? *Categorias dispon�veis:*\n${Object.keys(categoryAlias).map((c) => `� ${c}`).join('\n')}\n\n?? *Como usar:*\n� *${usedPrefix}menu*\n� *${usedPrefix}menu [categoria]*\n� *Exemplo:* ${usedPrefix}menu anime`)
+        return m.reply(`A categoria *${args[0]}* nao existe.\n\nCategorias disponiveis:\n${Object.keys(categoryAlias).map((c) => `- ${c}`).join('\n')}\n\nComo usar:\n- *${usedPrefix}menu*\n- *${usedPrefix}menu [categoria]*\n- Exemplo: ${usedPrefix}menu anime`)
       }
 
       const sections = menuObject
