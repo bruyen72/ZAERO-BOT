@@ -3,7 +3,15 @@ import fs from 'fs';
 global.owner = [''] // Configure seu número aqui
 global.botNumber = ''
 
-global.sessionName = 'Sessions/Owner'
+const sessionDirFromEnv = String(process.env.SESSION_DIR || '').trim()
+const hasDataDir = (() => {
+  try {
+    return fs.existsSync('/data')
+  } catch {
+    return false
+  }
+})()
+global.sessionName = sessionDirFromEnv || (hasDataDir ? '/data/auth' : 'Sessions/Owner')
 global.version = '^2.0 - Otimizado'
 global.dev = "© ZÆRØ BOT - Sistema Avançado de IA"
 global.botName = "ZÆRØ BOT"

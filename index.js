@@ -134,11 +134,23 @@ async function loadBots() {
 })()
 
 let opcion;
+const getOwnerCredsPath = () => path.join(global.sessionName, 'creds.json')
+const ensureOwnerSessionDir = () => {
+  try {
+    fs.mkdirSync(global.sessionName, { recursive: true })
+  } catch {}
+}
+const clearOwnerSessionDir = () => {
+  try {
+    fs.rmSync(global.sessionName, { recursive: true, force: true })
+  } catch {}
+  ensureOwnerSessionDir()
+}
 if (methodCodeQR) {
   opcion = "1";
 } else if (methodCode) {
   opcion = "2";
-} else if (!fs.existsSync("./Sessions/Owner/creds.json")) {
+} else if (!fs.existsSync(getOwnerCredsPath())) {
   // ✅ CORREÇÃO 8: Detectar ambiente não-interativo (Render, Docker, etc)
   const isInteractive = process.stdin.isTTY && process.stdout.isTTY;
 
@@ -164,6 +176,7 @@ if (methodCodeQR) {
 async function startBot() {
   // ✅ CORREÇÃO 2: Resetar flag de reconexão
   shouldRestart = true
+  ensureOwnerSessionDir()
 
   const { state, saveCreds } = await useMultiFileAuthState(global.sessionName)
   const { version, isLatest } = await fetchLatestBaileysVersion();
@@ -193,7 +206,7 @@ async function startBot() {
   const client = global.client
   client.isInit = false
   client.ev.on("creds.update", saveCreds)
-  if (opcion === "2" && !fs.existsSync("./Sessions/Owner/creds.json")) {
+  if (opcion === "2" && !fs.existsSync(getOwnerCredsPath())) {
   setTimeout(async () => {
     try {
        if (!state.creds.registered) {
@@ -231,7 +244,7 @@ async function startBot() {
       if (reason === DisconnectReason.loggedOut) {
         log.warning("🚪 Dispositivo desconectado via celular. Apagando sessão e reiniciando...")
         try {
-          fs.rmSync('./Sessions/Owner', { recursive: true, force: true })
+          clearOwnerSessionDir()
           console.log(chalk.green('🗑️ Pasta session apagada com sucesso.'))
         } catch (err) {
           console.error(chalk.red('⚠️ Erro ao apagar pasta session:'), err)
@@ -245,7 +258,7 @@ async function startBot() {
       if ([DisconnectReason.forbidden, DisconnectReason.multideviceMismatch].includes(reason)) {
         log.error("❌ Erro crítico de sessão. Apagando e reiniciando...")
         try {
-          fs.rmSync('./Sessions/Owner', { recursive: true, force: true })
+          clearOwnerSessionDir()
           console.log(chalk.green('🗑️ Sessão corrompida apagada.'))
         } catch (err) {
           console.error(chalk.red('⚠️ Erro ao apagar:'), err)
@@ -511,7 +524,7 @@ app.post('/api/disconnect', async (req, res) => {
 
       // Limpar sessão
       try {
-        fs.rmSync('./Sessions/Owner', { recursive: true, force: true })
+        clearOwnerSessionDir()
       } catch (err) {
         console.error('Erro ao apagar sessão:', err)
       }
