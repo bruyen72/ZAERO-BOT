@@ -367,6 +367,7 @@ import QRCode from 'qrcode'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import rateLimit from 'express-rate-limit'
+import session from 'express-session'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -378,6 +379,30 @@ const PORT = process.env.PORT || 3000
 // Middleware
 app.use(cors())
 app.use(express.json())
+app.use(express.urlencoded({ extended: false }))
+
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000
+const SESSION_COOKIE_NAME = 'zaero.sid'
+
+app.use(session({
+  name: SESSION_COOKIE_NAME,
+  secret: process.env.BOT_SESSION_SECRET || process.env.BOT_TOKEN_SECRET || 'zaero-bot-session-secret-2026',
+  resave: false,
+  saveUninitialized: false,
+  rolling: true,
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: SESSION_TTL_MS
+  }
+}))
+
+// Evita bypass por acesso direto ao arquivo estatico.
+app.get('/connect.html', (req, res) => {
+  res.redirect('/connect')
+})
+
 app.use(express.static(join(__dirname, 'public')))
 
 // ===================================================================
@@ -392,8 +417,8 @@ const AUTH_CONFIG = {
 }
 
 // Token seguro: armazenado em memória, gerado aleatoriamente a cada login
-const activeTokens = new Map() // token -> { createdAt, ip }
-const TOKEN_TTL_MS = 24 * 60 * 60 * 1000 // 24 horas
+const activeTokens = new Map() // token -> { createdAt, ip, username }
+const TOKEN_TTL_MS = SESSION_TTL_MS
 
 function generateSecureToken() {
   return crypto.randomBytes(48).toString('hex')
@@ -506,32 +531,37 @@ app.use((req, res, next) => {
 
 // Middleware de autenticação para rotas protegidas
 const authMiddleware = (req, res, next) => {
-  const token = req.headers.authorization?.replace('Bearer ', '')
+  const token = req.headers.authorization?.replace('Bearer ', '').trim()
   const ip = req.ip || req.connection.remoteAddress
 
-  if (!token) {
-    trackSuspiciousActivity(ip, 'Tentativa de acesso sem token')
-    console.log(chalk.yellow(`[AUTH] Acesso negado (sem token): ${ip} -> ${req.path}`))
+  if (req.session?.user) {
+    return next()
+  }
 
-    return res.status(401).json({
-      success: false,
-      message: 'Token de autenticacao nao fornecido'
-    })
+  if (token && isTokenValid(token)) {
+    const tokenData = activeTokens.get(token)
+    if (req.session && !req.session.user) {
+      req.session.user = { username: tokenData?.username || 'legacy-token-user' }
+    }
+    return next()
   }
 
   // Verificar token seguro (armazenado em memória)
-  if (isTokenValid(token)) {
-    next()
-  } else {
-    trackSuspiciousActivity(ip, 'Tentativa de acesso com token invalido')
-    console.log(chalk.red(`[AUTH] Token invalido: ${ip} -> ${req.path}`))
+  trackSuspiciousActivity(ip, `Tentativa sem autenticacao: ${req.method} ${req.path}`)
+  console.log(chalk.yellow(`[AUTH] Acesso negado: ${ip} -> ${req.path}`))
 
-    res.status(401).json({
-      success: false,
-      message: 'Token de autenticacao invalido ou expirado'
-    })
+  const wantsHtml = req.method === 'GET' && String(req.headers.accept || '').toLowerCase().includes('text/html')
+  if (wantsHtml) {
+    return res.redirect('/login')
   }
+
+  return res.status(401).json({
+    success: false,
+    message: 'Nao autenticado. Faca login para continuar.'
+  })
 }
+
+const requireAuth = authMiddleware
 
 // ===================================================================
 // ROTAS DA INTERFACE WEB
@@ -543,7 +573,7 @@ app.get('/login', (req, res) => {
 })
 
 // Página principal de conexão (PROTEGIDA - validação feita no client-side via localStorage)
-app.get('/connect', (req, res) => {
+app.get('/connect', requireAuth, (req, res) => {
   res.sendFile(join(__dirname, 'public', 'connect.html'))
 })
 
@@ -556,61 +586,104 @@ app.get('/', (req, res) => {
 // API DE AUTENTICAÇÃO
 // ===================================================================
 
-// Login (PROTEGIDO COM RATE LIMITING)
-app.post('/api/auth/login', loginLimiter, (req, res) => {
+function credentialsMatch(input, expected) {
+  const left = Buffer.from(String(input || ''))
+  const right = Buffer.from(String(expected || ''))
+  return left.length === right.length && crypto.timingSafeEqual(left, right)
+}
+
+function requestWantsJson(req) {
+  const accept = String(req.headers.accept || '').toLowerCase()
+  const contentType = String(req.headers['content-type'] || '').toLowerCase()
+  return accept.includes('application/json') || contentType.includes('application/json') || req.path.startsWith('/api/')
+}
+
+function respondLoginSuccess(req, res, token) {
+  if (requestWantsJson(req)) {
+    return res.json({
+      success: true,
+      token,
+      redirectTo: '/connect',
+      message: 'Autenticado com sucesso'
+    })
+  }
+  return res.redirect('/connect')
+}
+
+function respondLoginFailure(req, res, message, status = 401) {
+  if (requestWantsJson(req)) {
+    return res.status(status).json({ success: false, message })
+  }
+  return res.status(status).send(message)
+}
+
+// Login handler (sessao no servidor)
+const handleLoginRequest = (req, res) => {
   try {
-    const { username, password } = req.body
+    const { username, password } = req.body || {}
     const ip = req.ip || req.connection.remoteAddress
 
     if (!username || !password) {
       trackSuspiciousActivity(ip, 'Login sem credenciais')
-      return res.status(400).json({
-        success: false,
-        message: 'Usuário e senha são obrigatórios'
-      })
+      if (requestWantsJson(req)) {
+        return res.status(400).json({ success: false, message: 'Usuario e senha sao obrigatorios' })
+      }
+      return res.status(400).send('Usuario e senha sao obrigatorios')
     }
 
-    // Verificar credenciais com comparacao timing-safe
-    const userMatch = username.length === AUTH_CONFIG.username.length &&
-      crypto.timingSafeEqual(Buffer.from(username), Buffer.from(AUTH_CONFIG.username))
-    const passMatch = password.length === AUTH_CONFIG.password.length &&
-      crypto.timingSafeEqual(Buffer.from(password), Buffer.from(AUTH_CONFIG.password))
+    const userMatch = credentialsMatch(username, AUTH_CONFIG.username)
+    const passMatch = credentialsMatch(password, AUTH_CONFIG.password)
 
-    if (userMatch && passMatch) {
-      // Gerar token aleatório seguro
-      const token = generateSecureToken()
-      activeTokens.set(token, { createdAt: Date.now(), ip })
-
-      console.log(chalk.green(`[AUTH] Login bem-sucedido: ${username} (IP: ${ip})`))
-
-      res.json({
-        success: true,
-        token,
-        message: 'Autenticado com sucesso'
-      })
-    } else {
+    if (!userMatch || !passMatch) {
       trackSuspiciousActivity(ip, `Login falhou: ${username}`)
-      console.log(chalk.yellow(`[AUTH] ❌ Tentativa de login falhou: ${username} (IP: ${ip})`))
-
-      res.status(401).json({
-        success: false,
-        message: 'Usuário ou senha incorretos'
-      })
+      console.log(chalk.yellow(`[AUTH] Tentativa de login falhou: ${username} (IP: ${ip})`))
+      if (requestWantsJson(req)) {
+        return res.status(401).json({ success: false, message: 'Usuario ou senha incorretos' })
+      }
+      return res.status(401).send('Usuario ou senha incorretos')
     }
+
+    const token = generateSecureToken()
+    activeTokens.set(token, { createdAt: Date.now(), ip, username })
+    req.session.user = { username }
+
+    console.log(chalk.green(`[AUTH] Login bem-sucedido: ${username} (IP: ${ip})`))
+
+    return req.session.save((error) => {
+      if (error) {
+        console.error(chalk.red('[AUTH] Erro ao salvar sessao:'), error)
+        return res.status(500).json({ success: false, message: 'Erro ao iniciar sessao' })
+      }
+
+      return respondLoginSuccess(req, res, token)
+    })
   } catch (error) {
     console.error(chalk.red('[AUTH] Erro no login:'), error)
-    res.status(500).json({
-      success: false,
-      message: 'Erro no servidor'
-    })
+    if (requestWantsJson(req)) {
+      return res.status(500).json({ success: false, message: 'Erro no servidor' })
+    }
+    return res.status(500).send('Erro no servidor')
   }
-})
+}
+
+// Login principal (cria sessao no servidor)
+app.post('/login', loginLimiter, handleLoginRequest)
+// Compatibilidade com cliente legado
+app.post('/api/auth/login', loginLimiter, handleLoginRequest)
 
 // Logout
 app.post('/api/auth/logout', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Logout realizado com sucesso'
+  const token = req.headers.authorization?.replace('Bearer ', '').trim()
+  if (token) {
+    activeTokens.delete(token)
+  }
+
+  req.session.destroy(() => {
+    res.clearCookie(SESSION_COOKIE_NAME)
+    res.json({
+      success: true,
+      message: 'Logout realizado com sucesso'
+    })
   })
 })
 
@@ -619,13 +692,17 @@ app.post('/api/auth/logout', (req, res) => {
 // ===================================================================
 
 // Status da conexão (PROTEGIDA)
-app.get('/api/status', authMiddleware, apiLimiter, (req, res) => {
+app.get('/api/status', requireAuth, apiLimiter, (req, res) => {
   try {
     const connected = global.client?.user?.id ? true : false
     const userInfo = {
       connected,
       number: connected ? global.client.user.id.split(':')[0] : null,
       name: connected ? global.client.user.name : null,
+      user: connected ? {
+        number: global.client.user.id.split(':')[0],
+        name: global.client.user.name || null
+      } : null,
       timestamp: Date.now()
     }
 
@@ -639,7 +716,7 @@ app.get('/api/status', authMiddleware, apiLimiter, (req, res) => {
 })
 
 // Gerar QR Code (PROTEGIDA)
-app.post('/api/qr', authMiddleware, apiLimiter, async (req, res) => {
+app.post('/api/qr', requireAuth, apiLimiter, async (req, res) => {
   try {
     // Se já tem QR code armazenado, retornar
     if (currentQR) {
@@ -685,7 +762,7 @@ app.post('/api/qr', authMiddleware, apiLimiter, async (req, res) => {
 })
 
 // Gerar código de pareamento (PROTEGIDA)
-app.post('/api/pairing-code', authMiddleware, apiLimiter, async (req, res) => {
+app.post('/api/pairing-code', requireAuth, apiLimiter, async (req, res) => {
   try {
     const { phoneNumber } = req.body
 
@@ -740,7 +817,7 @@ app.post('/api/pairing-code', authMiddleware, apiLimiter, async (req, res) => {
 })
 
 // Desconectar bot (PROTEGIDA)
-app.post('/api/disconnect', authMiddleware, apiLimiter, async (req, res) => {
+app.post('/api/disconnect', requireAuth, apiLimiter, async (req, res) => {
   try {
     if (global.client) {
       await global.client.logout()
@@ -775,7 +852,7 @@ app.post('/api/disconnect', authMiddleware, apiLimiter, async (req, res) => {
 })
 
 // Informações do bot (PROTEGIDA)
-app.get('/api/info', authMiddleware, apiLimiter, (req, res) => {
+app.get('/api/info', requireAuth, apiLimiter, (req, res) => {
   res.json({
     name: 'ZÆRØ BOT',
     version: '2.0',

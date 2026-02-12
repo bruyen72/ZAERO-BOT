@@ -4,6 +4,9 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import fs from 'fs'
 import qrcode from 'qrcode'
+import crypto from 'crypto'
+import session from 'express-session'
+import rateLimit from 'express-rate-limit'
 import {
   makeWASocket,
   useMultiFileAuthState,
@@ -23,8 +26,121 @@ const PORT = process.env.PORT || 3000
 // Middleware
 app.use(cors())
 app.use(express.json())
-app.use(express.static(path.join(__dirname, '..', 'public')))
+app.use(express.urlencoded({ extended: false }))
 
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000
+const SESSION_COOKIE_NAME = 'zaero.sid'
+
+app.use(session({
+  name: SESSION_COOKIE_NAME,
+  secret: process.env.BOT_SESSION_SECRET || process.env.BOT_TOKEN_SECRET || 'zaero-bot-session-secret-2026',
+  resave: false,
+  saveUninitialized: false,
+  rolling: true,
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: SESSION_TTL_MS
+  }
+}))
+
+// Evita bypass por acesso direto ao arquivo estatico de conexao.
+app.get('/connect.html', (req, res) => {
+  res.redirect('/connect')
+})
+
+app.use(express.static(path.join(__dirname, '..', 'public')))
+// Auth config
+const AUTH_CONFIG = {
+  username: process.env.BOT_ADMIN_USER || 'bruyen',
+  password: process.env.BOT_ADMIN_PASS || 'BRPO@hulk1'
+}
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Muitas tentativas de login. Tente novamente em 15 minutos.'
+  }
+})
+
+function credentialsMatch(input, expected) {
+  const left = Buffer.from(String(input || ''))
+  const right = Buffer.from(String(expected || ''))
+  return left.length === right.length && crypto.timingSafeEqual(left, right)
+}
+
+function requestWantsJson(req) {
+  const accept = String(req.headers.accept || '').toLowerCase()
+  const contentType = String(req.headers['content-type'] || '').toLowerCase()
+  return accept.includes('application/json') || contentType.includes('application/json') || req.path.startsWith('/api/')
+}
+
+function requireAuth(req, res, next) {
+  if (req.session?.user) return next()
+
+  const wantsHtml = req.method === 'GET' && String(req.headers.accept || '').toLowerCase().includes('text/html')
+  if (wantsHtml) {
+    return res.redirect('/login')
+  }
+
+  return res.status(401).json({
+    success: false,
+    message: 'Nao autenticado. Faca login para continuar.'
+  })
+}
+
+function respondLoginSuccess(req, res) {
+  if (requestWantsJson(req)) {
+    return res.json({
+      success: true,
+      redirectTo: '/connect',
+      message: 'Autenticado com sucesso'
+    })
+  }
+  return res.redirect('/connect')
+}
+
+function respondLoginFailure(req, res, message, status = 401) {
+  if (requestWantsJson(req)) {
+    return res.status(status).json({ success: false, message })
+  }
+  return res.status(status).send(message)
+}
+
+function handleLogin(req, res) {
+  try {
+    const { username, password } = req.body || {}
+
+    if (!username || !password) {
+      return respondLoginFailure(req, res, 'Usuario e senha sao obrigatorios', 400)
+    }
+
+    const userMatch = credentialsMatch(username, AUTH_CONFIG.username)
+    const passMatch = credentialsMatch(password, AUTH_CONFIG.password)
+
+    if (!userMatch || !passMatch) {
+      return respondLoginFailure(req, res, 'Usuario ou senha incorretos', 401)
+    }
+
+    req.session.user = { username }
+    return req.session.save((error) => {
+      if (error) {
+        return res.status(500).json({
+          success: false,
+          message: 'Erro ao iniciar sessao'
+        })
+      }
+      return respondLoginSuccess(req, res)
+    })
+  } catch (error) {
+    return respondLoginFailure(req, res, 'Erro no servidor', 500)
+  }
+}
 // Estado global
 let qrCodeData = null
 let pairingCode = null
@@ -344,16 +460,40 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'))
 })
 
-app.get('/api/status', (req, res) => {
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'login.html'))
+})
+
+app.post('/login', loginLimiter, handleLogin)
+app.post('/api/auth/login', loginLimiter, handleLogin)
+
+app.post('/api/auth/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.clearCookie(SESSION_COOKIE_NAME)
+    res.json({ success: true, message: 'Logout realizado com sucesso' })
+  })
+})
+
+app.get('/connect', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'connect.html'))
+})
+
+app.get('/api/status', requireAuth, (req, res) => {
+  const connected = connectionStatus === 'connected'
   res.json({
+    connected,
     status: connectionStatus,
     qr: qrCodeData,
     code: pairingCode,
+    user: connected && client?.user ? {
+      number: String(client.user.id || '').split(':')[0] || null,
+      name: client.user.name || null
+    } : null,
     timestamp: nowIso()
   })
 })
 
-app.post('/api/connect/qr', async (req, res) => {
+const connectViaQrHandler = async (req, res) => {
   try {
     if (shouldRejectNewConnectRequest()) {
       return res.status(409).json({
@@ -385,9 +525,12 @@ app.post('/api/connect/qr', async (req, res) => {
       error: err.message
     })
   }
-})
+}
 
-app.post('/api/connect/code', async (req, res) => {
+app.post('/api/connect/qr', requireAuth, connectViaQrHandler)
+app.post('/api/qr', requireAuth, connectViaQrHandler)
+
+const connectViaCodeHandler = async (req, res) => {
   try {
     const { phoneNumber } = req.body
 
@@ -436,9 +579,12 @@ app.post('/api/connect/code', async (req, res) => {
       error: err.message
     })
   }
-})
+}
 
-app.post('/api/disconnect', async (req, res) => {
+app.post('/api/connect/code', requireAuth, connectViaCodeHandler)
+app.post('/api/pairing-code', requireAuth, connectViaCodeHandler)
+
+app.post('/api/disconnect', requireAuth, async (req, res) => {
   try {
     clearReconnectTimer()
     clearPairingTimer()
@@ -475,3 +621,4 @@ app.listen(PORT, () => {
 })
 
 export default app
+

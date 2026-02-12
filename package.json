@@ -30,13 +30,16 @@
     "acrcloud": "^1.4.0",
     "aptoide-scraper": "git+https://github.com/DIEGO-OFC/dv-aptoide-scraper.git#ac0f21c888be7bd37f2f2941d3777ee6c946cce4",
     "axios": "^0.24.0",
+    "body-parser": "^1.20.2",
     "cfonts": "latest",
     "chalk": "^4.1.2",
     "cheerio": "npm:cheerio@1.0.0-rc.12",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "express-rate-limit": "^8.2.1",
+    "express-session": "^1.19.0",
     "ffmpeg-static": "^5.3.0",
+    "file-type": "latest",
     "fluent-ffmpeg": "^2.1.2",
     "form-data": "^4.0.0",
     "gradient-string": "^2.0.2",
@@ -44,6 +47,7 @@
     "human-readable": "^0.2.1",
     "jimp": "latest",
     "lodash": "latest",
+    "mime-types": "^2.1.35",
     "moment": "^2.29.4",
     "moment-timezone": "^0.5.37",
     "node-cache": "latest",
@@ -58,9 +62,6 @@
     "wa-sticker-formatter": "latest",
     "ws": "^8.18.3",
     "yargs": "^18.0.0",
-    "yt-search": "^2.10.4",
-    "mime-types": "^2.1.35",
-    "file-type": "latest",
-    "body-parser": "^1.20.2"
+    "yt-search": "^2.10.4"
   }
 }

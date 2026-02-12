@@ -13,25 +13,12 @@ class BotConnection {
   init() {
     this.setupParticles();
     this.setupEventListeners();
-    if (!this.checkAuthToken()) return;
     this.checkConnectionStatus();
   }
 
   // ===================================================================
   // AUTHENTICATION
   // ===================================================================
-  checkAuthToken() {
-    const token = this.getAuthToken();
-    if (!token) {
-      console.warn('[AUTH] Token não encontrado, redirecionando para login...');
-      this.showStatusError('Sessao nao encontrada. Faca login novamente.');
-      this.stopStatusCheck();
-      this.safeRedirectToLogin();
-      return false;
-    }
-    return true;
-  }
-
   getAuthToken() {
     return localStorage.getItem('botAuthToken');
   }
@@ -50,10 +37,13 @@ class BotConnection {
 
   getAuthHeaders() {
     const token = this.getAuthToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
+    const headers = {
+      'Content-Type': 'application/json'
     };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    return headers;
   }
 
   // ===================================================================
@@ -274,6 +264,13 @@ class BotConnection {
       });
 
       const data = await response.json();
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          this.handleStatusFailure({ status: response.status, payload: data });
+          return;
+        }
+        throw new Error(data.message || `HTTP ${response.status}`);
+      }
 
       if (data.success && data.qr) {
         // Hide loading, show QR
@@ -362,6 +359,13 @@ class BotConnection {
       });
 
       const data = await response.json();
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          this.handleStatusFailure({ status: response.status, payload: data });
+          return;
+        }
+        throw new Error(data.message || `HTTP ${response.status}`);
+      }
 
       if (data.success && data.code) {
         // Display pairing code
@@ -456,6 +460,13 @@ class BotConnection {
       });
 
       const data = await response.json();
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          this.handleStatusFailure({ status: response.status, payload: data });
+          return;
+        }
+        throw new Error(data.message || `HTTP ${response.status}`);
+      }
 
       if (data.success) {
         this.showMethodSelection();

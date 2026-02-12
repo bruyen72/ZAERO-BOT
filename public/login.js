@@ -1,5 +1,5 @@
 // ===================================================================
-// LOGIN.JS - Sistema de Autenticação do ZÆRØ BOT
+// LOGIN.JS - Sistema de Autenticacao do ZAERO BOT
 // ===================================================================
 
 class LoginSystem {
@@ -10,7 +10,6 @@ class LoginSystem {
   init() {
     this.setupParticles();
     this.setupEventListeners();
-    this.checkExistingSession();
   }
 
   // ===================================================================
@@ -54,18 +53,15 @@ class LoginSystem {
     const togglePassword = document.getElementById('togglePassword');
     const passwordInput = document.getElementById('password');
 
-    // Form submit
     form?.addEventListener('submit', (e) => {
       e.preventDefault();
       this.handleLogin();
     });
 
-    // Toggle password visibility
     togglePassword?.addEventListener('click', () => {
       const type = passwordInput.type === 'password' ? 'text' : 'password';
       passwordInput.type = type;
 
-      // Update icon
       const eyeIcon = document.getElementById('eyeIcon');
       if (type === 'text') {
         eyeIcon.innerHTML = `
@@ -81,25 +77,6 @@ class LoginSystem {
   }
 
   // ===================================================================
-  // SESSION CHECK
-  // ===================================================================
-  checkExistingSession() {
-    const token = localStorage.getItem('botAuthToken');
-    const expiry = localStorage.getItem('botAuthExpiry');
-
-    if (token && expiry) {
-      const now = new Date().getTime();
-      if (now < parseInt(expiry)) {
-        // Sessao valida: redirecionar para /connect (token fica no localStorage, nao na URL)
-        window.location.href = '/connect';
-      } else {
-        // Session expired, clear storage
-        this.clearSession();
-      }
-    }
-  }
-
-  // ===================================================================
   // LOGIN HANDLER
   // ===================================================================
   async handleLogin() {
@@ -108,57 +85,45 @@ class LoginSystem {
     const btnLogin = document.getElementById('btnLogin');
     const btnText = document.getElementById('btnText');
 
-    // Hide error message
     this.hideError();
 
-    // Validate inputs
     if (!username || !password) {
       this.showError('Por favor, preencha todos os campos');
       return;
     }
 
-    // Show loading
     btnLogin.disabled = true;
     btnText.innerHTML = '<div class="spinner"></div>Autenticando...';
 
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch('/login', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
         body: JSON.stringify({ username, password })
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
-      if (data.success && data.token) {
-        // Save session
-        const expiry = new Date().getTime() + (24 * 60 * 60 * 1000); // 24 hours
-        localStorage.setItem('botAuthToken', data.token);
-        localStorage.setItem('botAuthExpiry', expiry.toString());
-
-        // Success feedback
-        btnText.innerHTML = '✅ Autenticado! Redirecionando...';
-
-        // Redirect to connect page (token fica seguro no localStorage)
-        setTimeout(() => {
-          window.location.href = '/connect';
-        }, 1000);
-
-      } else {
-        throw new Error(data.message || 'Credenciais inválidas');
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Usuario ou senha incorretos');
       }
 
+      btnText.innerHTML = 'Autenticado! Redirecionando...';
+      const redirectTo = typeof data.redirectTo === 'string' ? data.redirectTo : '/connect';
+
+      setTimeout(() => {
+        window.location.href = redirectTo;
+      }, 700);
     } catch (error) {
       console.error('Erro no login:', error);
       this.showError(error.message || 'Erro ao autenticar. Verifique suas credenciais.');
 
-      // Reset button
       btnLogin.disabled = false;
       btnText.innerHTML = 'ENTRAR';
 
-      // Clear password field
       document.getElementById('password').value = '';
       document.getElementById('password').focus();
     }
@@ -173,7 +138,6 @@ class LoginSystem {
       errorDiv.textContent = message;
       errorDiv.classList.add('show');
 
-      // Auto-hide after 5 seconds
       setTimeout(() => {
         this.hideError();
       }, 5000);
@@ -185,14 +149,6 @@ class LoginSystem {
     if (errorDiv) {
       errorDiv.classList.remove('show');
     }
-  }
-
-  // ===================================================================
-  // SESSION MANAGEMENT
-  // ===================================================================
-  clearSession() {
-    localStorage.removeItem('botAuthToken');
-    localStorage.removeItem('botAuthExpiry');
   }
 }
 
