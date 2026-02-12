@@ -383,9 +383,9 @@ app.use(express.static(join(__dirname, 'public')))
 
 // Credenciais seguras (configurar via variáveis de ambiente)
 const AUTH_CONFIG = {
-  username: process.env.BOT_ADMIN_USER || 'admin',
-  password: process.env.BOT_ADMIN_PASS || 'ZAERO@Bot#2026!Strong',
-  tokenSecret: process.env.BOT_TOKEN_SECRET || 'zaero-bot-secret-key-2026'
+  username: process.env.BOT_ADMIN_USER || 'bruyen',
+  password: process.env.BOT_ADMIN_PASS || 'BRPO@hulk1',
+  tokenSecret: process.env.BOT_TOKEN_SECRET || 'zaero-bot-secret-bruyen-2026-ultra-secure'
 }
 
 // Middleware de autenticação
