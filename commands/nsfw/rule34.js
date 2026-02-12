@@ -1,4 +1,5 @@
-import fetch from 'node-fetch'
+import fetch from 'node-fetch';
+import { fetchMediaSafe } from '../../lib/mediaFetcher.js';
 
 export default {
   command: ['r34', 'rule34', 'rule'],
@@ -6,7 +7,7 @@ export default {
   run: async (client, m, args, usedPrefix, command) => {
     try {
       if (!globalThis.db.data.chats[m.chat]?.nsfw) return m.reply(`ꕥ O conteúdo *NSFW* está desabilitado neste grupo.\n\nUm *administrador* pode habilitá-lo com o comando:\n» *${usedPrefix}nsfw on*`)
-      if (!args[0]) return client.reply(m.chat, `《✧》 Você deve especificar tags para pesquisar\n> Exemplo » *${usedPrefix + command} neko*`, m)      
+      if (!args[0]) return client.reply(m.chat, `《✧》 Você deve especificar tags para pesquisar\n> Exemplo » *${usedPrefix + command} neko*`, m)
       await m.react('🕒')
       const tag = args[0].replace(/\s+/g, '_')
       let mediaList = []
@@ -21,19 +22,37 @@ export default {
           mediaList = [...new Set(valid)].sort(() => Math.random() - 0.5)
         }
       }
-      if (!mediaList.length) 
+      if (!mediaList.length)
         return client.reply(m.chat, `《✧》 Nenhum resultado encontrado para ${tag}`, m)
-      const media = mediaList[0]
+
+      // Tenta baixar com fallback (múltiplas URLs)
+      let mediaBuffer = null;
+      for (const mediaUrl of mediaList.slice(0, 5)) {
+        mediaBuffer = await fetchMediaSafe(mediaUrl, {
+          validateFirst: true,
+          logPrefix: `[Rule34-${tag}]`
+        });
+        if (mediaBuffer) break;
+      }
+
+      if (!mediaBuffer) {
+        await m.react('✖️')
+        return await m.reply(`> ⚠️ *Mídia indisponível*\n\nTodas as URLs retornadas pelo Rule34 falharam ao carregar.\nTente outra tag ou tente novamente mais tarde.`)
+      }
+
       const caption = `ꕥ Resultados para » ${tag}`
-      if (media.endsWith('.mp4')) {
-        await client.sendMessage(m.chat, { video: { url: media }, caption, mentions: [m.sender] })
+      const isVideo = mediaList[0].endsWith('.mp4')
+
+      if (isVideo) {
+        await client.sendMessage(m.chat, { video: mediaBuffer, caption, mentions: [m.sender] })
       } else {
-        await client.sendMessage(m.chat, { image: { url: media }, caption, mentions: [m.sender] })
+        await client.sendMessage(m.chat, { image: mediaBuffer, caption, mentions: [m.sender] })
       }
       await m.react('✔️')
     } catch (e) {
       await m.react('✖️')
-      await m.reply(`> Ocorreu um erro inesperado ao executar o comando *${usedPrefix + command}*. Tente novamente ou entre em contato com o suporte se o problema persistir.\n> [Erro: *${e.message}*]`)
+      console.error(`[Rule34] Erro no comando ${command}:`, e);
+      await m.reply(`> ❌ *Erro inesperado*\n\nOcorreu um erro ao executar o comando *${usedPrefix + command}*.\n\n*Detalhes:* ${e.message}`)
     }
   }
 }

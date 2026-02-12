@@ -1,6 +1,7 @@
 import fetch from 'node-fetch'
 let WAMessageStubType = (await import('@whiskeysockets/baileys')).default
 import chalk from 'chalk'
+import { fetchMediaSafe } from '../lib/mediaFetcher.js'
 
 export default async (client, m) => {
   client.ev.on('group-participants.update', async (anu) => {
@@ -67,10 +68,27 @@ export default async (client, m) => {
             const gifResponse = await fetch(`https://tenor.googleapis.com/v2/search?q=anime+welcome&key=AIzaSyCY8VRFGjKZ2wpAoRTQ3faV_XcwTrYL5DA&limit=30`)
             const gifData = await gifResponse.json()
             const gifs = gifData.results || []
-            const randomGif = gifs[Math.floor(Math.random() * gifs.length)]
-            const gifUrl = randomGif?.media_formats?.gif?.url || randomGif?.media_formats?.mp4?.url || pp
+            if (gifs.length === 0) throw new Error('No GIFs found')
 
-            await client.sendMessage(anu.id, { video: { url: gifUrl }, gifPlayback: true, caption, ...fakeContext })
+            // Tenta baixar múltiplos GIFs (fallback)
+            let gifBuffer = null
+            for (let i = 0; i < Math.min(gifs.length, 3); i++) {
+              const randomGif = gifs[Math.floor(Math.random() * gifs.length)]
+              const gifUrl = randomGif?.media_formats?.mp4?.url || randomGif?.media_formats?.gif?.url
+              if (!gifUrl) continue
+
+              gifBuffer = await fetchMediaSafe(gifUrl, {
+                validateFirst: false,
+                logPrefix: '[Event-Welcome]'
+              })
+              if (gifBuffer) break
+            }
+
+            if (gifBuffer) {
+              await client.sendMessage(anu.id, { video: gifBuffer, gifPlayback: true, caption, ...fakeContext })
+            } else {
+              throw new Error('Failed to download GIF')
+            }
           } catch (err) {
             // Se falhar ao buscar GIF, usa a foto de perfil
             await client.sendMessage(anu.id, { image: { url: pp }, caption, ...fakeContext })
@@ -100,10 +118,27 @@ export default async (client, m) => {
             const gifResponse = await fetch(`https://tenor.googleapis.com/v2/search?q=anime+goodbye+sad&key=AIzaSyCY8VRFGjKZ2wpAoRTQ3faV_XcwTrYL5DA&limit=30`)
             const gifData = await gifResponse.json()
             const gifs = gifData.results || []
-            const randomGif = gifs[Math.floor(Math.random() * gifs.length)]
-            const gifUrl = randomGif?.media_formats?.gif?.url || randomGif?.media_formats?.mp4?.url || pp
+            if (gifs.length === 0) throw new Error('No GIFs found')
 
-            await client.sendMessage(anu.id, { video: { url: gifUrl }, gifPlayback: true, caption, ...fakeContext })
+            // Tenta baixar múltiplos GIFs (fallback)
+            let gifBuffer = null
+            for (let i = 0; i < Math.min(gifs.length, 3); i++) {
+              const randomGif = gifs[Math.floor(Math.random() * gifs.length)]
+              const gifUrl = randomGif?.media_formats?.mp4?.url || randomGif?.media_formats?.gif?.url
+              if (!gifUrl) continue
+
+              gifBuffer = await fetchMediaSafe(gifUrl, {
+                validateFirst: false,
+                logPrefix: '[Event-Goodbye]'
+              })
+              if (gifBuffer) break
+            }
+
+            if (gifBuffer) {
+              await client.sendMessage(anu.id, { video: gifBuffer, gifPlayback: true, caption, ...fakeContext })
+            } else {
+              throw new Error('Failed to download GIF')
+            }
           } catch (err) {
             // Se falhar ao buscar GIF, usa a foto de perfil
             await client.sendMessage(anu.id, { image: { url: pp }, caption, ...fakeContext })

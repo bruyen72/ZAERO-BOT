@@ -1,4 +1,5 @@
-import axios from 'axios'
+import axios from 'axios';
+import { fetchMediaSafe } from '../../lib/mediaFetcher.js';
 
 export default {
   command: ['gelbooru', 'gbooru'],
@@ -15,17 +16,35 @@ export default {
       const valid = data.map(i => i?.file_url).filter(u => typeof u === 'string' && /\.(jpe?g|png|gif|mp4)$/.test(u))
       const mediaList = [...new Set(valid)].sort(() => Math.random() - 0.5)
       if (!mediaList.length) return client.reply(m.chat, `《✧》 Nenhum resultado encontrado para ${tag}`, m)
-      const media = mediaList[Math.floor(Math.random() * mediaList.length)]
+
+      // Tenta baixar com fallback (múltiplas URLs)
+      let mediaBuffer = null;
+      for (const mediaUrl of mediaList.slice(0, 5)) {
+        mediaBuffer = await fetchMediaSafe(mediaUrl, {
+          validateFirst: true,
+          logPrefix: `[Gelbooru-${tag}]`
+        });
+        if (mediaBuffer) break;
+      }
+
+      if (!mediaBuffer) {
+        await m.react('✖️')
+        return await m.reply(`> ⚠️ *Mídia indisponível*\n\nTodas as URLs retornadas pelo Gelbooru falharam ao carregar.\nTente outra tag ou tente novamente mais tarde.`)
+      }
+
       const caption = `ꕥ Resultados para » ${tag}`
-      if (media.endsWith('.mp4')) {
-        await client.sendMessage(m.chat, { video: { url: media }, caption, mentions: [m.sender] })
+      const isVideo = mediaList[0].endsWith('.mp4')
+
+      if (isVideo) {
+        await client.sendMessage(m.chat, { video: mediaBuffer, caption, mentions: [m.sender] })
       } else {
-        await client.sendMessage(m.chat, { image: { url: media }, caption, mentions: [m.sender] })
+        await client.sendMessage(m.chat, { image: mediaBuffer, caption, mentions: [m.sender] })
       }
       await m.react('✔️')
     } catch (e) {
       await m.react('✖️')
-      await m.reply(`> Ocorreu um erro inesperado ao executar o comando *${usedPrefix + command}*. Tente novamente ou entre em contato com o suporte se o problema persistir.\n> [Erro: *${e.message}*]`)
+      console.error(`[Gelbooru] Erro no comando ${command}:`, e);
+      await m.reply(`> ❌ *Erro inesperado*\n\nOcorreu um erro ao executar o comando *${usedPrefix + command}*.\n\n*Detalhes:* ${e.message}`)
     }
   }
 }

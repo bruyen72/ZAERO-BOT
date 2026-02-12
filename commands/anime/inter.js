@@ -1,5 +1,6 @@
 import fetch from 'node-fetch';
-import { resolveLidToRealJid } from "../../lib/utils.js"
+import { resolveLidToRealJid } from "../../lib/utils.js";
+import { fetchMediaSafe } from '../../lib/mediaFetcher.js';
 
 const captions = {
   peek: (from, to, genero) => from === to ? 'Ele está espionando atrás de uma porta para se divertir.' : `está espiando a`,
@@ -189,17 +190,68 @@ command: Array.from(new Set(['angry','enojado','enojada','bleh','bored','aburrid
     const genero = global.db.data.users[from]?.genre || 'Oculto'
     const captionText = captions[currentCommand](fromMention, toMention, genero)
     const caption = to !== from ? `${fromMention} ${captionText} ${toMention} ${getRandomSymbol()}` : `${fromMention} ${captionText} ${getRandomSymbol()}`
+
     try {
-    const response = await fetch(`https://tenor.googleapis.com/v2/search?q=anime+${encodeURIComponent(currentCommand)}&key=AIzaSyCY8VRFGjKZ2wpAoRTQ3faV_XcwTrYL5DA&limit=20`)
-    const json = await response.json()
-    const gifs = json.results
-    if (!gifs || gifs.length === 0) throw new Error('Nenhum resultado encontrado em nenhuma API.')
-    const media = gifs[Math.floor(Math.random() * gifs.length)].media_formats
-    const url = media.mp4?.url || media.tinymp4?.url || media.loopedmp4?.url || media.gif?.url || media.tinygif?.url
-    if (!url) throw new Error('Nenhum formato compatível encontrado no Tenor.')  
-    await client.sendMessage(m.chat, { video: { url }, gifPlayback: true, caption, mentions: [from, to] }, { quoted: m })
+      await m.react('⏳');
+
+      const response = await fetch(`https://tenor.googleapis.com/v2/search?q=anime+${encodeURIComponent(currentCommand)}&key=AIzaSyCY8VRFGjKZ2wpAoRTQ3faV_XcwTrYL5DA&limit=20`)
+      const json = await response.json()
+      const gifs = json.results
+
+      if (!gifs || gifs.length === 0) {
+        await m.react('❌');
+        throw new Error('Nenhum resultado encontrado na API do Tenor.')
+      }
+
+      // Tenta múltiplos GIFs (fallback)
+      let buffer = null;
+      let successUrl = null;
+
+      for (let i = 0; i < Math.min(gifs.length, 5); i++) {
+        const media = gifs[i].media_formats
+        const url = media.mp4?.url || media.tinymp4?.url || media.loopedmp4?.url || media.gif?.url || media.tinygif?.url
+
+        if (!url) continue;
+
+        // Tenta baixar com sistema robusto
+        buffer = await fetchMediaSafe(url, {
+          validateFirst: true,
+          logPrefix: `[Anime-${currentCommand}]`
+        });
+
+        if (buffer) {
+          successUrl = url;
+          break;
+        }
+      }
+
+      if (!buffer) {
+        await m.react('❌');
+        return await m.reply(
+          `> ⚠️ *Mídia temporariamente indisponível*\n\n` +
+          `Não foi possível carregar o GIF animado do Tenor.\n` +
+          `Tente novamente em alguns instantes.`
+        );
+      }
+
+      // Envia com o buffer baixado
+      await client.sendMessage(
+        m.chat,
+        {
+          video: buffer,
+          gifPlayback: true,
+          caption,
+          mentions: [from, to]
+        },
+        { quoted: m }
+      );
+
+      await m.react('✅');
+
     } catch (e) {
-    await m.reply(`> Ocorreu um erro inesperado ao executar o comando *${usedPrefix + command}*. Tente novamente ou entre em contato com o suporte se o problema persistir.\n> [Erro: *${e.message}*]`)
+      await m.react('❌');
+      console.error(`[Anime] Erro no comando ${command}:`, e);
+      await m.reply(`> ❌ *Erro inesperado*\n\nOcorreu um erro ao executar o comando *${usedPrefix + command}*.\n\n*Detalhes:* ${e.message}\n\nSe o problema persistir, contate o suporte.`)
     }
   },
 };

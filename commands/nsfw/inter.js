@@ -1,6 +1,7 @@
 import fetch from 'node-fetch';
 import fs from 'fs';
 import { resolveLidToRealJid } from "../../lib/utils.js";
+import { fetchNsfwMedia } from '../../lib/mediaFetcher.js';
 
 const captions = {      
   anal: (from, to) => from === to ? 'Ele colocou em seu ânus.' : 'ele colocou no ânus',
@@ -86,14 +87,57 @@ export default {
     const genero = global.db.data.users[from]?.genre || 'Oculto';
     const captionText = captions[currentCommand](fromMention, toMention, genero);
     const caption = to !== from ? `${fromMention} ${captionText} ${toMention} ${getRandomSymbol()}` : `${fromMention} ${captionText} ${getRandomSymbol()}`;
+
     try {
-    const nsfw = './lib/nsfw.json'
-    const nsfwData = JSON.parse(fs.readFileSync(nsfw))
-      const videos = nsfwData[currentCommand];      
-      const randomVideo = videos[Math.floor(Math.random() * videos.length)];
-      await client.sendMessage(m.chat, { video: { url: randomVideo }, gifPlayback: true, caption, mentions: [from, to] }, { quoted: m });
+      // Carrega dados NSFW
+      const nsfw = './lib/nsfw.json';
+      const nsfwData = JSON.parse(fs.readFileSync(nsfw));
+
+      // Envia mensagem de "carregando" (opcional)
+      await m.react('⏳');
+
+      // Busca mídia com sistema robusto (tenta todas URLs com fallback)
+      const mediaResult = await fetchNsfwMedia(currentCommand, nsfwData);
+
+      if (!mediaResult) {
+        // Todas URLs falharam
+        await m.react('❌');
+        return await m.reply(
+          `> ⚠️ *Fonte temporariamente indisponível*\n\n` +
+          `O conteúdo solicitado não pôde ser carregado no momento. Isso pode acontecer quando:\n\n` +
+          `• O servidor de mídia está fora do ar\n` +
+          `• Há problemas de conexão temporários\n` +
+          `• O link expirou ou foi removido\n\n` +
+          `*Tente novamente em alguns minutos.* Se o problema persistir, use outro comando ou entre em contato com o suporte.`
+        );
+      }
+
+      // Sucesso! Envia o vídeo com o buffer baixado
+      await client.sendMessage(
+        m.chat,
+        {
+          video: mediaResult.buffer,
+          gifPlayback: true,
+          caption,
+          mentions: [from, to]
+        },
+        { quoted: m }
+      );
+
+      await m.react('✅');
+
+      // Log de sucesso (opcional, para debug)
+      console.log(`[NSFW] Comando ${command} executado com sucesso. Tamanho: ${(mediaResult.size / 1024 / 1024).toFixed(2)}MB`);
+
     } catch (e) {
-      await m.reply(`> Ocorreu um erro inesperado ao executar o comando *${usedPrefix + command}*. Tente novamente ou entre em contato com o suporte se o problema persistir.\n> [Erro: *${e.message}*]`);
+      await m.react('❌');
+      console.error(`[NSFW] Erro no comando ${command}:`, e);
+      await m.reply(
+        `> ❌ *Erro inesperado*\n\n` +
+        `Ocorreu um erro ao executar o comando *${usedPrefix + command}*.\n\n` +
+        `*Detalhes técnicos:* ${e.message}\n\n` +
+        `Se o problema persistir, contate o suporte.`
+      );
     }
   }
 };
