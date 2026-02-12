@@ -2,7 +2,7 @@ app = "zaero-bot"
 primary_region = "iad"
 
 [build]
-  dockerfile = "deploy/fly/Dockerfile.fly"
+  dockerfile = "Dockerfile.fly"
 
 [env]
   NODE_ENV = "production"

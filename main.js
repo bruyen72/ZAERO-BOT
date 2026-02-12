@@ -19,14 +19,25 @@ console.log(chalk.green(`[ ✿ ] ${global.comandos.size} Comandos carregados com
 const messageQueue = [];
 let isProcessing = false;
 const recentMenuRequests = new Map();
+const recentMessageIds = new Map();
 // ⚡ Reduzido para 3 segundos para permitir respostas mais rápidas
 const MENU_DEDUP_WINDOW_MS = 3000;
+const MESSAGE_DEDUP_WINDOW_MS = 10000;
 
 function pruneRecentMenuRequests(now = Date.now()) {
   if (recentMenuRequests.size < 200) return;
   for (const [key, timestamp] of recentMenuRequests.entries()) {
     if (now - timestamp > MENU_DEDUP_WINDOW_MS) {
       recentMenuRequests.delete(key);
+    }
+  }
+}
+
+function pruneRecentMessageIds(now = Date.now()) {
+  if (recentMessageIds.size < 500) return;
+  for (const [key, timestamp] of recentMessageIds.entries()) {
+    if (now - timestamp > MESSAGE_DEDUP_WINDOW_MS) {
+      recentMessageIds.delete(key);
     }
   }
 }
@@ -86,6 +97,15 @@ function getAllSessionBots() {
 
 async function processMessage(client, m) {
   if (!m.message) return
+  const messageId = m?.key?.id
+  if (messageId) {
+    const now = Date.now()
+    const dedupKey = `${m.chat || 'unknown'}:${messageId}`
+    const lastSeen = recentMessageIds.get(dedupKey) || 0
+    if (now - lastSeen < MESSAGE_DEDUP_WINDOW_MS) return
+    recentMessageIds.set(dedupKey, now)
+    pruneRecentMessageIds(now)
+  }
   const sender = m.sender
   
   // 1. Inicializa DB imediatamente

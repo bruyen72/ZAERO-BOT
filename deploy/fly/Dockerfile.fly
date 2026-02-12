@@ -4,11 +4,19 @@ WORKDIR /app
 
 # Required for npm dependencies installed directly from GitHub repos.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends git \
+  && apt-get install -y --no-install-recommends ca-certificates git \
+  && git config --global url."https://github.com/".insteadOf "ssh://git@github.com/" \
+  && git config --global url."https://github.com/".insteadOf "git@github.com:" \
+  && update-ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN GIT_CONFIG_COUNT=2 \
+  GIT_CONFIG_KEY_0=url.https://github.com/.insteadof \
+  GIT_CONFIG_VALUE_0=ssh://git@github.com/ \
+  GIT_CONFIG_KEY_1=url.https://github.com/.insteadof \
+  GIT_CONFIG_VALUE_1=git@github.com: \
+  npm install --omit=dev
 
 COPY . .
 

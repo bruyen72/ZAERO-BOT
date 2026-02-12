@@ -26,9 +26,9 @@
   "dependencies": {
     "@babel/parser": "latest",
     "@vitalets/google-translate-api": "^8.0.0",
-    "@whiskeysockets/baileys": "github:Ado21/BailMod",
+    "@whiskeysockets/baileys": "git+https://github.com/Ado21/BailMod.git#8dcbf8c2312727b1d843deb1fac1f352f9e54a51",
     "acrcloud": "^1.4.0",
-    "aptoide-scraper": "github:DIEGO-OFC/dv-aptoide-scraper",
+    "aptoide-scraper": "git+https://github.com/DIEGO-OFC/dv-aptoide-scraper.git#ac0f21c888be7bd37f2f2941d3777ee6c946cce4",
     "axios": "^0.24.0",
     "cfonts": "latest",
     "chalk": "^4.1.2",
