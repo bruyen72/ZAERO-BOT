@@ -378,17 +378,118 @@ app.use(express.json())
 app.use(express.static(join(__dirname, 'public')))
 
 // ===================================================================
+// SISTEMA DE AUTENTICAÇÃO
+// ===================================================================
+
+// Credenciais seguras (configurar via variáveis de ambiente)
+const AUTH_CONFIG = {
+  username: process.env.BOT_ADMIN_USER || 'admin',
+  password: process.env.BOT_ADMIN_PASS || 'ZAERO@Bot#2026!Strong',
+  tokenSecret: process.env.BOT_TOKEN_SECRET || 'zaero-bot-secret-key-2026'
+}
+
+// Middleware de autenticação
+const authMiddleware = (req, res, next) => {
+  const token = req.headers.authorization?.replace('Bearer ', '')
+
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'Token não fornecido' })
+  }
+
+  // Verificar token (simples - pode usar JWT em produção)
+  const validToken = Buffer.from(
+    `${AUTH_CONFIG.username}:${AUTH_CONFIG.password}:${AUTH_CONFIG.tokenSecret}`,
+    'utf-8'
+  ).toString('base64')
+
+  if (token === validToken) {
+    next()
+  } else {
+    res.status(401).json({ success: false, message: 'Token inválido' })
+  }
+}
+
+// ===================================================================
 // ROTAS DA INTERFACE WEB
 // ===================================================================
 
-// Página principal de conexão
+// Página de login
+app.get('/login', (req, res) => {
+  res.sendFile(join(__dirname, 'public', 'login.html'))
+})
+
+// Página principal de conexão (PROTEGIDA)
 app.get('/connect', (req, res) => {
+  // Verificar se tem token na query string (vindo do login)
+  const token = req.query.token
+
+  if (!token) {
+    // Sem token, redirecionar para login
+    return res.redirect('/login')
+  }
+
   res.sendFile(join(__dirname, 'public', 'connect.html'))
 })
 
 // Redirecionar raiz para landing page
 app.get('/', (req, res) => {
   res.sendFile(join(__dirname, 'public', 'index.html'))
+})
+
+// ===================================================================
+// API DE AUTENTICAÇÃO
+// ===================================================================
+
+// Login
+app.post('/api/auth/login', (req, res) => {
+  try {
+    const { username, password } = req.body
+
+    if (!username || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Usuário e senha são obrigatórios'
+      })
+    }
+
+    // Verificar credenciais
+    if (username === AUTH_CONFIG.username && password === AUTH_CONFIG.password) {
+      // Gerar token
+      const token = Buffer.from(
+        `${AUTH_CONFIG.username}:${AUTH_CONFIG.password}:${AUTH_CONFIG.tokenSecret}`,
+        'utf-8'
+      ).toString('base64')
+
+      console.log(chalk.green(`[AUTH] Login bem-sucedido: ${username}`))
+
+      res.json({
+        success: true,
+        token,
+        message: 'Autenticado com sucesso'
+      })
+    } else {
+      console.log(chalk.yellow(`[AUTH] Tentativa de login falhou: ${username}`))
+
+      res.status(401).json({
+        success: false,
+        message: 'Usuário ou senha incorretos'
+      })
+    }
+  } catch (error) {
+    console.error(chalk.red('[AUTH] Erro no login:'), error)
+    res.status(500).json({
+      success: false,
+      message: 'Erro no servidor'
+    })
+  }
+})
+
+// Logout
+app.post('/api/auth/logout', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Logout realizado com sucesso'
+  })
 })
 
 // ===================================================================
