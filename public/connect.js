@@ -135,7 +135,6 @@ class BotConnection {
 
     // Update user info
     if (userInfo) {
-      document.getElementById('connectedNumber').textContent = userInfo.number || 'N/A';
       document.getElementById('connectedName').textContent = userInfo.name || 'Usuário';
     }
 
