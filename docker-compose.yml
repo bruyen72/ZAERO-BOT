@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  zaero-bot:
+    build: .
+    container_name: zaero-bot
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    volumes:
+      # Monta pasta de sessões para persistir credenciais
+      - ./Sessions:/app/Sessions
+      # Monta banco de dados
+      - ./lib/database.json:/app/lib/database.json
+    ports:
+      # Expõe porta da API web (se houver)
+      - "3000:3000"
+    stdin_open: true
+    tty: true

@@ -1,0 +1,43 @@
+# Dependências
+node_modules/
+# package-lock.json ← IMPORTANTE: NÃO ignorar (necessário para Docker)
+
+# Sessões (CREDENCIAIS SENSÍVEIS - NÃO COMMITAR!)
+Sessions/
+session/
+*.session
+creds.json
+
+# Arquivos temporários
+tmp/
+temp/
+*.tmp
+*.log
+
+# Configurações locais
+.env
+.env.local
+.claude/
+
+# Sistema Operacional
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Banco de dados local (se contiver dados sensíveis)
+# lib/database.json
+
+# Backups
+*.backup
+*.bak
+*.old
+
+# Arquivos específicos do projeto (se necessário)
+BOTRENAN-main/
