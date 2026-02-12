@@ -73,7 +73,7 @@ function setupWhatsAppButton() {
   }
 
   button.addEventListener("click", () => {
-    window.open("https://wa.me/", "_blank", "noopener");
+    window.open("https://api.whatsapp.com/send/?phone=5565984660212&text=Olá!%20Preciso%20de%20ajuda%20com%20o%20ZÆRØ%20BOT&type=phone_number&app_absent=0", "_blank", "noopener");
   });
 }
 
@@ -84,7 +84,8 @@ function setupConnectButton() {
   }
 
   button.addEventListener("click", () => {
-    window.location.href = "/connect";
+    // Redireciona para página de login
+    window.location.href = "/login";
   });
 }
 
