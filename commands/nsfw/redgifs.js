@@ -159,6 +159,7 @@ async function fetchUniqueSearchResult(query, excludeIds = []) {
     maxPages: 10,
     perPage: 40,
     nicheOverride: query,
+    strictQuery: true,
   })
 }
 
@@ -178,8 +179,11 @@ export default {
       return m.reply(
         `Use assim:\n` +
           `- *${usedPrefix + command} <termo>*\n` +
+          `- *${usedPrefix + command} <categoria1 categoria2>*\n` +
           `- *${usedPrefix + command} <url do redgifs>*\n\n` +
-          `Exemplo: *${usedPrefix + command} blowjob*`,
+          `Exemplos:\n` +
+          `*${usedPrefix + command} blowjob*\n` +
+          `*${usedPrefix + command} blowjob anal*`,
       )
     }
 
