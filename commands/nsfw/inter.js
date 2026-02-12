@@ -1,48 +1,13 @@
-import fs from 'fs';
-import path from 'path';
 import { resolveLidToRealJid } from "../../lib/utils.js";
 import { fetchNsfwMedia } from '../../lib/mediaFetcher.js';
-import { runFfmpeg } from '../../lib/system/ffmpeg.js';
-
-const MAX_WA_VIDEO_BYTES = 14 * 1024 * 1024; // 14MB limite WhatsApp
-const COMPRESS_THRESHOLD = 8 * 1024 * 1024;  // Comprimir acima de 8MB
-
-function isValidVideoBuffer(buffer) {
-  if (!Buffer.isBuffer(buffer) || buffer.length < 12) return false;
-  // Verificar magic bytes MP4 (ftyp) ou WebM (EBML)
-  const hasFtyp = buffer.slice(4, 8).toString() === 'ftyp' || buffer.slice(0, 32).toString().includes('ftyp');
-  const hasEbml = buffer[0] === 0x1A && buffer[1] === 0x45 && buffer[2] === 0xDF && buffer[3] === 0xA3;
-  // Verificar que NAO e HTML
-  const startsWithHtml = buffer.slice(0, 15).toString().trim().toLowerCase().startsWith('<!doctype') ||
-    buffer.slice(0, 15).toString().trim().toLowerCase().startsWith('<html');
-  if (startsWithHtml) return false;
-  return hasFtyp || hasEbml;
-}
-
-async function compressVideoBuffer(buffer) {
-  const tmpDir = './tmp';
-  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-  const id = Date.now() + '-' + Math.random().toString(16).slice(2);
-  const inPath = path.join(tmpDir, `nsfw-in-${id}.mp4`);
-  const outPath = path.join(tmpDir, `nsfw-out-${id}.mp4`);
-  try {
-    fs.writeFileSync(inPath, buffer);
-    await runFfmpeg([
-      '-y', '-i', inPath,
-      '-vf', 'scale=480:-2',
-      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28',
-      '-c:a', 'aac', '-b:a', '64k',
-      '-movflags', '+faststart',
-      '-t', '60',
-      outPath
-    ], { timeoutMs: 60000 });
-    const compressed = fs.readFileSync(outPath);
-    return compressed;
-  } finally {
-    try { if (fs.existsSync(inPath)) fs.unlinkSync(inPath); } catch {}
-    try { if (fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch {}
-  }
-}
+import {
+  COMPRESS_THRESHOLD,
+  MAX_WA_VIDEO_BYTES,
+  compressVideoBuffer,
+  getChatRedgifsHistory,
+  isValidVideoBuffer,
+  registerSentRedgifsId,
+} from '../../lib/nsfwShared.js';
 
 const captions = {      
   anal: (from, to) => from === to ? 'Ele colocou em seu ânus.' : 'ele colocou no ânus',
@@ -71,39 +36,6 @@ const symbols = ['(⁠◠⁠‿⁠◕⁠)', '˃͈◡˂͈', '૮(˶ᵔᵕᵔ˶)�
 
 function getRandomSymbol() {
   return symbols[Math.floor(Math.random() * symbols.length)];
-}
-
-const REDGIFS_HISTORY_LIMIT = 1200;
-
-function normalizeId(value = '') {
-  return String(value).toLowerCase().trim();
-}
-
-function getChatRedgifsHistory(chat = {}) {
-  if (!Array.isArray(chat.nsfwRedgifsSentIds)) {
-    chat.nsfwRedgifsSentIds = [];
-  }
-
-  chat.nsfwRedgifsSentIds = chat.nsfwRedgifsSentIds
-    .map((item) => normalizeId(item))
-    .filter(Boolean);
-
-  return chat.nsfwRedgifsSentIds;
-}
-
-function registerSentRedgifsId(chat = {}, id = '') {
-  const normalized = normalizeId(id);
-  if (!normalized) return;
-
-  const history = getChatRedgifsHistory(chat).filter((item) => item !== normalized);
-  history.push(normalized);
-
-  if (history.length > REDGIFS_HISTORY_LIMIT) {
-    chat.nsfwRedgifsSentIds = history.slice(-REDGIFS_HISTORY_LIMIT);
-    return;
-  }
-
-  chat.nsfwRedgifsSentIds = history;
 }
 
 const alias = {
@@ -296,4 +228,3 @@ export default {
     }
   }
 };
-
