@@ -98,6 +98,7 @@ class LoginSystem {
     try {
       const response = await fetch('/login', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json'

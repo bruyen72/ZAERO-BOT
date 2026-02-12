@@ -21,6 +21,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const app = express()
+app.set('trust proxy', 1)
 const PORT = process.env.PORT || 3000
 
 // Middleware
@@ -30,8 +31,14 @@ app.use(express.urlencoded({ extended: false }))
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000
 const SESSION_COOKIE_NAME = 'zaero.sid'
+const SESSION_COOKIE_SECURE = process.env.SESSION_COOKIE_SECURE === 'true'
+  ? true
+  : process.env.SESSION_COOKIE_SECURE === 'false'
+    ? false
+    : 'auto'
 
 app.use(session({
+  proxy: true,
   name: SESSION_COOKIE_NAME,
   secret: process.env.BOT_SESSION_SECRET || process.env.BOT_TOKEN_SECRET || 'zaero-bot-session-secret-2026',
   resave: false,
@@ -40,7 +47,7 @@ app.use(session({
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: SESSION_COOKIE_SECURE,
     maxAge: SESSION_TTL_MS
   }
 }))

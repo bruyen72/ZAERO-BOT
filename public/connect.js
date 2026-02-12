@@ -214,6 +214,7 @@ class BotConnection {
 
   async fetchStatus() {
     const response = await fetch('/api/status', {
+      credentials: 'same-origin',
       headers: this.getAuthHeaders()
     });
 
@@ -260,6 +261,7 @@ class BotConnection {
     try {
       const response = await fetch('/api/qr', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: this.getAuthHeaders()
       });
 
@@ -354,6 +356,7 @@ class BotConnection {
     try {
       const response = await fetch('/api/pairing-code', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: this.getAuthHeaders(),
         body: JSON.stringify({ phoneNumber })
       });
@@ -456,6 +459,7 @@ class BotConnection {
     try {
       const response = await fetch('/api/disconnect', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: this.getAuthHeaders()
       });
 
