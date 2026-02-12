@@ -10,7 +10,19 @@ let commandFlags = {}
 export default {
   command: ['code', 'qr'],
   category: 'socket',
+  disabled: true, // Comando desabilitado
   run: async (client, m, args, usedPrefix, command) => {
+    // Comando desabilitado - retorna mensagem informativa
+    return client.reply(
+      m.chat,
+      `❌ *Comando Desabilitado*\n\n` +
+      `Este comando foi desativado temporariamente.\n\n` +
+      `*Motivo:* Segurança e estabilidade do bot\n\n` +
+      `Para mais informações, entre em contato com o suporte.`,
+      m
+    );
+
+    /* CÓDIGO ORIGINAL DESABILITADO:
     let time = global.db.data.users[m.sender].Subs + 120000 || ''
     if (new Date() - global.db.data.users[m.sender].Subs < 120000) {
       return client.reply(m.chat,`ꕥ Você deve esperar *${msToTime(time - new Date())}* para tentar vincular novamente um soquete.`, m)
@@ -36,6 +48,7 @@ export default {
     const phone = args[0] ? args[0].replace(/\D/g, '') : m.sender.split('@')[0]
     await startSubBot(m, client, caption, isCode, phone, m.chat, commandFlags, isCommand)
     global.db.data.users[m.sender].Subs = new Date() * 1
+    */
   }
 };
 

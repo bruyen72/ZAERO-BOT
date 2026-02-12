@@ -8,7 +8,19 @@ const dirname = path.dirname(filename)
 export default {
   command: ['bots', 'sockets'],
   category: 'socket',
+  disabled: true, // Comando desabilitado
   run: async (client, m) => {
+    // Comando desabilitado - retorna mensagem informativa
+    return client.reply(
+      m.chat,
+      `‚ùå *Comando Desabilitado*\n\n` +
+      `Este comando foi desativado temporariamente.\n\n` +
+      `*Motivo:* Seguran√ßa e estabilidade do bot\n\n` +
+      `Para mais informa√ß√µes, entre em contato com o suporte.`,
+      m
+    );
+
+    /* C√ìDIGO ORIGINAL DESABILITADO:
     const botId = client.user.id.split(':')[0] + '@s.whatsapp.net'
     const bot = global.db.data.settings[botId] || {}
 
@@ -40,7 +52,7 @@ export default {
       const data = global.db.data.settings[jid]
       const name = data?.namebot || 'Bot'
       const handle = `@${number}`
-      return `- [${label} *${name}*] õ ${handle}`
+      return `- [${label} *${name}*] ÔøΩ ${handle}`
     }
 
     if (global.db.data.settings[mainBotJid]) {
@@ -48,7 +60,7 @@ export default {
       const handle = `@${mainBotJid.split('@')[0]}`
       if (!m.isGroup || isMainBotInGroup) {
         mentionedJid.push(mainBotJid)
-        categorizedBots.Owner.push(`- [Owner *${name}*] õ ${handle}`)
+        categorizedBots.Owner.push(`- [Owner *${name}*] ÔøΩ ${handle}`)
       }
     }
 
@@ -64,10 +76,10 @@ export default {
     const totalBots = totalCounts.Owner + totalCounts.Sub
     const totalInGroup = categorizedBots.Owner.length + categorizedBots.Sub.length
 
-    let message = `? N˙meros de Sockets ativos *(${totalBots})*\n\n`
-    message += `? Principais õ *${totalCounts.Owner}*\n`
-    message += `? Subs õ *${totalCounts.Sub}*\n\n`
-    message += `? *Bots visÌveis neste chat õ* ${totalInGroup}\n`
+    let message = `? NÔøΩmeros de Sockets ativos *(${totalBots})*\n\n`
+    message += `? Principais ÔøΩ *${totalCounts.Owner}*\n`
+    message += `? Subs ÔøΩ *${totalCounts.Sub}*\n\n`
+    message += `? *Bots visÔøΩveis neste chat ÔøΩ* ${totalInGroup}\n`
 
     for (const category of ['Owner', 'Sub']) {
       if (categorizedBots[category].length) {
@@ -76,5 +88,6 @@ export default {
     }
 
     await client.sendContextInfoIndex(m.chat, message.trim(), {}, m, true, [...new Set(mentionedJid)])
+    */
   },
 }
