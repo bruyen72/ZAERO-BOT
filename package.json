@@ -6,7 +6,10 @@
   "type": "module",
   "scripts": {
     "format": "prettier --write .",
-    "start": "node index.js"
+    "start": "node index.js",
+    "deploy:fly": "fly deploy --config deploy/fly/fly.toml",
+    "deploy:fly:build": "fly deploy --build-only --push --config deploy/fly/fly.toml",
+    "check:package-json": "node -e \"JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('package.json OK')\""
   },
   "keywords": [
     "whatsapp-bot",
