@@ -1,0 +1,37 @@
+# Dependências (serão instaladas no container)
+node_modules/
+package-lock.json
+
+# Sessões (não incluir credenciais!)
+Sessions/
+session/
+*.session
+creds.json
+
+# Arquivos temporários
+tmp/
+temp/
+*.tmp
+*.log
+
+# Git
+.git/
+.gitignore
+
+# Documentação
+*.md
+!README.md
+
+# IDEs
+.vscode/
+.idea/
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/
+
+# Outros bots
+BOTRENAN-main/
