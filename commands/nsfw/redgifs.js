@@ -20,10 +20,12 @@ function isRedgifsUrl(value = '') {
 function pickBestCandidate(candidates = []) {
   if (!Array.isArray(candidates) || candidates.length === 0) return null
 
+  // Prioriza MP4 de alta qualidade para evitar tela cinza no mobile
   return (
-    candidates.find((item) => item.mediaType === 'video' && /silent\.mp4|[-_]silent\b/i.test(item.url)) ||
+    candidates.find((item) => item.mediaType === 'video' && item.url.includes('hd.mp4')) ||
+    candidates.find((item) => item.mediaType === 'video' && item.url.includes('.mp4') && !item.url.includes('silent')) ||
+    candidates.find((item) => item.mediaType === 'video' && item.url.includes('.mp4')) ||
     candidates.find((item) => item.mediaType === 'video') ||
-    candidates.find((item) => item.mediaType === 'gif') ||
     null
   )
 }
@@ -67,7 +69,6 @@ async function sendByUrl(client, m, url, caption) {
     m.chat,
     {
       video: { url },
-      gifPlayback: true,
       caption,
     },
     { quoted: m },
@@ -115,7 +116,6 @@ async function sendResultWithFallback(client, m, mediaResult, caption, logLabel 
       m.chat,
       {
         video: videoBuffer,
-        gifPlayback: true,
         caption,
       },
       { quoted: m },
