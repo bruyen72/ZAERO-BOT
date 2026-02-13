@@ -98,7 +98,7 @@ export default {
           : 'SubBot'
         const users = Object.keys(global.db?.data?.users || {}).length
         const device = getDevice(m.key?.id || '')
-        const senderName = global.db?.data?.users?.[m.sender]?.name || m.pushName || 'Usuario'
+        const senderName = global.db?.data?.users?.[m.sender]?.name || m.pushName || 'Usuário'
         const senderMention = `@${m.sender.split('@')[0]}`
         const dateText = moment.tz('America/Sao_Paulo').format('DD/MM/YYYY')
         const timeText = moment.tz('America/Sao_Paulo').format('HH:mm')
@@ -106,7 +106,7 @@ export default {
 
         if (rawCategory && !resolvedCategory) {
           return m.reply(
-            `A categoria *${rawCategory}* nao existe.\n\nCategorias disponiveis:\n${buildCategoryList()}\n\nExemplo: ${usedPrefix}menu downloader`
+            `A categoria *${rawCategory}* não existe.\n\nCategorias disponíveis:\n${buildCategoryList()}\n\nExemplo: ${usedPrefix}menu downloader`
           )
         }
 

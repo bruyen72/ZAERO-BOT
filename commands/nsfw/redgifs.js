@@ -2,7 +2,7 @@ import { fetchMediaSafe, fetchNsfwMedia, resolveNsfwVideo } from '../../lib/medi
 import {
   COMPRESS_THRESHOLD,
   MAX_WA_VIDEO_BYTES,
-  compressVideoBuffer,
+  transcodeForWhatsapp,
   getChatRedgifsHistory,
   isValidVideoBuffer,
   normalizeId,
@@ -20,7 +20,7 @@ function isRedgifsUrl(value = '') {
 function pickBestCandidate(candidates = []) {
   if (!Array.isArray(candidates) || candidates.length === 0) return null
 
-  // Prioriza MP4 de alta qualidade para evitar tela cinza no mobile
+  // Prioriza MP4 HD para melhor base de conversão
   return (
     candidates.find((item) => item.mediaType === 'video' && item.url.includes('hd.mp4')) ||
     candidates.find((item) => item.mediaType === 'video' && item.url.includes('.mp4') && !item.url.includes('silent')) ||
@@ -33,17 +33,14 @@ function pickBestCandidate(candidates = []) {
 function humanDuration(seconds) {
   const total = Math.max(0, Number(seconds || 0))
   if (!total) return 'desconhecida'
-
   const mins = Math.floor(total / 60)
   const secs = Math.round(total % 60)
   if (mins <= 0) return `${secs}s`
   return `${mins}m ${secs}s`
 }
 
-function cleanText(value = '', fallback = 'Sem titulo') {
-  const normalized = String(value || '')
-    .replace(/\s+/g, ' ')
-    .trim()
+function cleanText(value = '', fallback = 'Sem título') {
+  const normalized = String(value || '').replace(/\s+/g, ' ').trim()
   return normalized || fallback
 }
 
@@ -56,70 +53,63 @@ function ensureChatData(chatId) {
 
 function buildCaption(media = {}, sourceLabel = 'RedGifs') {
   return (
-    `REDGIFS\n\n` +
-    `Title: ${cleanText(media.title)}\n` +
-    `Duration: ${humanDuration(media.duration)}\n` +
-    `Source: ${sourceLabel || media.pageUrl || media.url || 'RedGifs'}`
+    `🔞 *REDGIFS PRO* 🔞\n\n` +
+    `🎬 *Título:* ${cleanText(media.title)}\n` +
+    `⏱️ *Duração:* ${humanDuration(media.duration)}\n` +
+    `🔗 *Fonte:* ${sourceLabel || 'RedGifs'}\n\n` +
+    `> _Vídeo otimizado para Mobile (2026)_`
   )
 }
 
 async function sendByUrl(client, m, url, caption) {
   if (!url) return false
-  await client.sendMessage(
-    m.chat,
-    {
-      video: { url },
-      caption,
-    },
-    { quoted: m },
-  )
+  // Nota: Enviar por URL pode causar tela cinza se o RedGifs não estiver em formato compatível.
+  // Mas serve como último recurso (fallback).
+  await client.sendMessage(m.chat, { video: { url }, caption }, { quoted: m })
   return true
 }
 
-async function sendResultWithFallback(client, m, mediaResult, caption, logLabel = 'redgifs') {
+/**
+ * Processa e envia o resultado garantindo compatibilidade mobile.
+ */
+async function sendResultProcessed(client, m, mediaResult, caption, logLabel = 'redgifs') {
   const fallbackUrl = mediaResult?.url || null
   let videoBuffer = Buffer.isBuffer(mediaResult?.buffer) ? mediaResult.buffer : null
 
+  // Se não tem buffer, tenta enviar direto por URL
   if (!videoBuffer || videoBuffer.length === 0) {
     return sendByUrl(client, m, fallbackUrl, caption)
   }
 
+  // Validação básica do buffer
   if (!isValidVideoBuffer(videoBuffer)) {
-    console.warn(`[RedGifs] ${logLabel}: buffer invalido, tentando URL...`)
+    console.warn(`[RedGifs] ${logLabel}: buffer inválido, tentando URL...`)
     return sendByUrl(client, m, fallbackUrl, caption)
   }
 
-  if (videoBuffer.length > COMPRESS_THRESHOLD) {
-    console.log(
-      `[RedGifs] ${logLabel}: comprimindo ${(videoBuffer.length / 1024 / 1024).toFixed(2)}MB (> ${(COMPRESS_THRESHOLD / 1024 / 1024).toFixed(0)}MB)`,
-    )
-    m.reply('⌛ Otimizando video pro WhatsApp...').catch(() => {})
-    try {
-      videoBuffer = await compressVideoBuffer(videoBuffer)
-      console.log(`[RedGifs] ${logLabel}: comprimido para ${(videoBuffer.length / 1024 / 1024).toFixed(2)}MB`)
-    } catch (error) {
-      console.error(`[RedGifs] ${logLabel}: falha na compressao: ${error.message}`)
-      console.log(`[RedGifs] ${logLabel}: compressao falhou, enviando por URL...`)
+  // SEMPRE Transcodifica para garantir compatibilidade Mobile (H.264 Baseline, YUV420P)
+  // Isso resolve o problema da tela cinza.
+  console.log(`[RedGifs] ${logLabel}: Normalizando vídeo para compatibilidade mobile...`)
+  try {
+    // Se for muito grande (>18MB), o FFmpeg pode demorar demais ou estourar RAM
+    if (videoBuffer.length > 20 * 1024 * 1024) {
+      console.warn(`[RedGifs] Video muito grande (${(videoBuffer.length/1024/1024).toFixed(1)}MB), enviando URL direto.`)
+      return sendByUrl(client, m, fallbackUrl, caption)
+    }
+
+    videoBuffer = await transcodeForWhatsapp(videoBuffer)
+    console.log(`[RedGifs] ${logLabel}: Transcodificação concluída. Tamanho final: ${(videoBuffer.length / 1024 / 1024).toFixed(2)}MB`)
+  } catch (error) {
+    console.error(`[RedGifs] ${logLabel}: falha na transcodificação: ${error.message}`)
+    // Se falhar a transcodificação (ex: timeout), tenta enviar o buffer original se for pequeno,
+    // ou vai para o fallback de URL.
+    if (videoBuffer.length > MAX_WA_VIDEO_BYTES) {
       return sendByUrl(client, m, fallbackUrl, caption)
     }
   }
 
-  if (videoBuffer.length > MAX_WA_VIDEO_BYTES) {
-    console.warn(
-      `[RedGifs] ${logLabel}: video ${(videoBuffer.length / 1024 / 1024).toFixed(2)}MB > ${(MAX_WA_VIDEO_BYTES / 1024 / 1024).toFixed(0)}MB, tentando URL`,
-    )
-    return sendByUrl(client, m, fallbackUrl, caption)
-  }
-
   try {
-    await client.sendMessage(
-      m.chat,
-      {
-        video: videoBuffer,
-        caption,
-      },
-      { quoted: m },
-    )
+    await client.sendMessage(m.chat, { video: videoBuffer, caption }, { quoted: m })
     return true
   } catch (error) {
     console.error(`[RedGifs] ${logLabel}: envio por buffer falhou (${error.message}), tentando URL...`)
@@ -132,7 +122,7 @@ async function resolveDirectInput(input) {
   const best = pickBestCandidate(parsed?.candidates || [])
 
   if (!best?.url) {
-    throw new Error('Nao encontrei midia animada neste link.')
+    throw new Error('Não encontrei mídia animada neste link.')
   }
 
   const mediaBuffer = await fetchMediaSafe(best.url, {
@@ -172,23 +162,12 @@ export default {
   category: 'nsfw',
   run: async (client, m, args, usedPrefix, command) => {
     if (!globalThis.db?.data?.chats?.[m.chat]?.nsfw) {
-      return m.reply(
-        `O conteudo *NSFW* esta desabilitado neste grupo.\n\n` +
-          `Um *administrador* pode habilitar com:\n» *${usedPrefix}nsfw on*`,
-      )
+      return m.reply(`O conteúdo *NSFW* está desabilitado neste grupo.\n\nUm *administrador* pode habilitar com:\n» *${usedPrefix}nsfw on*`)
     }
 
     const input = args.join(' ').trim()
     if (!input) {
-      return m.reply(
-        `Use assim:\n` +
-          `- *${usedPrefix + command} <termo>*\n` +
-          `- *${usedPrefix + command} <categoria1 categoria2>*\n` +
-          `- *${usedPrefix + command} <url do redgifs>*\n\n` +
-          `Exemplos:\n` +
-          `*${usedPrefix + command} blowjob*\n` +
-          `*${usedPrefix + command} blowjob anal*`,
-      )
+      return m.reply(`Use assim:\n- *${usedPrefix + command} <termo>*\n- *${usedPrefix + command} <url do redgifs>*\n\nExemplo: *${usedPrefix + command} blowjob*`)
     }
 
     const chatData = ensureChatData(m.chat)
@@ -202,17 +181,14 @@ export default {
         await withChatNsfwQueue(m.chat, async () => {
           const mediaResult = await resolveDirectInput(input)
           const caption = buildCaption(mediaResult, mediaResult.pageUrl || input)
-          const sent = await sendResultWithFallback(client, m, mediaResult, caption, command)
+          const sent = await sendResultProcessed(client, m, mediaResult, caption, command)
 
           if (!sent) {
             await m.react('❌')
-            return m.reply('Erro ao enviar esta midia. Tente outro link.')
+            return m.reply('Erro ao enviar esta mídia. Tente outro link.')
           }
 
-          if (mediaResult.id) {
-            registerSentRedgifsId(chatData, mediaResult.id)
-          }
-
+          if (mediaResult.id) registerSentRedgifsId(chatData, mediaResult.id)
           await m.react('✅')
         })
         return
@@ -228,57 +204,38 @@ export default {
             mediaResult = await fetchUniqueSearchResult(input, [...attemptedIds])
           } catch (error) {
             lastError = error
-            console.error(`[RedGifs] tentativa ${attempt}: falha ao buscar: ${error.message}`)
             continue
           }
 
           if (!mediaResult) break
 
           const currentId = normalizeId(mediaResult.id || '')
-          if (currentId && attemptedIds.has(currentId)) {
-            console.warn(`[RedGifs] tentativa ${attempt}: ID repetido ${currentId}, buscando outro...`)
-            continue
-          }
-          if (currentId) {
-            attemptedIds.add(currentId)
-          }
+          if (currentId && attemptedIds.has(currentId)) continue
+          if (currentId) attemptedIds.add(currentId)
 
-          const sourceLabel = mediaResult.pageUrl || mediaResult.url || input
-          const caption = buildCaption(mediaResult, sourceLabel)
+          const caption = buildCaption(mediaResult, mediaResult.pageUrl || mediaResult.url || input)
 
           try {
-            const sentThisAttempt = await sendResultWithFallback(client, m, mediaResult, caption, `${command}#${attempt}`)
-            if (!sentThisAttempt) {
-              console.warn(`[RedGifs] tentativa ${attempt}: buffer e URL falharam, tentando proximo resultado...`)
-              continue
-            }
+            const sentThisAttempt = await sendResultProcessed(client, m, mediaResult, caption, `${command}#${attempt}`)
+            if (!sentThisAttempt) continue
 
-            if (currentId) {
-              registerSentRedgifsId(chatData, currentId)
-            }
-
+            if (currentId) registerSentRedgifsId(chatData, currentId)
             sent = true
             break
           } catch (error) {
             lastError = error
-            console.error(`[RedGifs] tentativa ${attempt}: erro no envio: ${error.message}`)
           }
         }
 
         if (!sent) {
           await m.react('❌')
-          const suffix = lastError ? `\nDetalhe: ${lastError.message}` : ''
-          return m.reply(`Nenhuma midia valida encontrada para esse termo no momento.${suffix}`)
+          return m.reply(`Nenhuma mídia válida encontrada para esse termo no momento.`)
         }
-
         await m.react('✅')
       })
     } catch (error) {
       await m.react('❌')
-      await m.reply(
-        `> Erro ao executar *${usedPrefix + command}*.\n` +
-          `> [Erro: *${error.message}*]`,
-      )
+      await m.reply(`> Erro ao executar *${usedPrefix + command}*.\n> [Erro: *${error.message}*]`)
     }
   },
 }

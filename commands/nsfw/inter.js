@@ -11,10 +11,10 @@ import {
 } from '../../lib/nsfwShared.js';
 
 const captions = {
-  anal: (from, to) => from === to ? 'Ele colocou em seu ânus.' : 'ele colocou no ânus de',
-  cum: (from, to) => from === to ? 'ele entrou... Vamos pular isso.' : 'entrou em',
-  undress: (from, to) => from === to ? 'está tirando a roupa' : 'está tirando a roupa de',
-  fuck: (from, to) => from === to ? 'rende-se ao desejo' : 'está fodendo',
+  anal: (from, to) => from === to ? 'Ele colocou em seu próprio ânus.' : 'ele colocou no ânus de',
+  cum: (from, to) => from === to ? 'ele gozou... Vamos pular os detalhes.' : 'gozou em',
+  undress: (from, to) => from === to ? 'está tirando a própria roupa' : 'está tirando a roupa de',
+  fuck: (from, to) => from === to ? 'se rendeu ao desejo' : 'está fodendo',
   spank: (from, to) => from === to ? 'está batendo na própria bunda' : 'está dando uns tapas em',
   lickpussy: (from, to) => from === to ? 'está lambendo uma buceta' : 'está lambendo a buceta de',
   fap: (from, to) => from === to ? 'está se masturbando' : 'está se masturbando pensando em',
@@ -48,7 +48,7 @@ const alias = {
   cum: ['cum','gozar'],
   undress: ['undress','encuerar','tirarroupa','pelada','pelado'],
   fuck: ['fuck','coger','foder','transar','trepar'],
-  spank: ['spank','nalgada','bater','tapa','palmada'],
+  spank: ['spank','nalgada','bater','tapa','palmada','baternabunda'],
   lickpussy: ['lickpussy','lamberbuceta','chuparbuceta'],
   fap: ['fap','paja','punheta','bronha'],
   grope: ['grope','apalpar'],
@@ -64,7 +64,7 @@ const alias = {
   handjob: ['handjob','siririca'],
   lickass: ['lickass','lamberbunda','chuparbunda'],
   lickdick: ['lickdick','lamberpau','chuparpau'],
-  bunda: ['bunda','bunduda','bundao','raba','rabuda','rabao'],
+  bunda: ['bunda','bunduda','bundada','raba','rabuda','rabao'],
   cavalgar: ['cavalgar','cavalgada','cavalgando','montar'],
   sentarnacara: ['sentarnacara','sentanacara','facesitting'],
   creampie: ['creampie','gozardentro','gozoudentro','leitinhodentro'],
@@ -74,7 +74,7 @@ export default {
   command: Object.values(alias).flat(),
   category: 'nsfw',
   run: async (client, m, args, usedPrefix, command) => {
-    if (!db.data.chats[m.chat].nsfw) return m.reply(`ꕥ O conteúdo *NSFW* está desabilitado neste grupo.\n\nUm *administrador* pode habilitá-lo com o comando:\n» *${usedPrefix}nsfw on*`);
+    if (!global.db.data.chats[m.chat].nsfw) return m.reply(`ꕥ O conteúdo *NSFW* está desabilitado neste grupo.\n\nUm *administrador* pode habilitá-lo com o comando:\n» *${usedPrefix}nsfw on*`);
     const chatData = global.db?.data?.chats?.[m.chat] || {};
     const redgifsHistory = getChatRedgifsHistory(chatData);
     const currentCommand = Object.keys(alias).find(key => alias[key].includes(command)) || command;
@@ -119,7 +119,7 @@ export default {
         if (!mediaResult) {
           await m.react('❌');
           return await m.reply(
-            `> Fonte temporariamente indisponivel.\n` +
+            `> Fonte temporariamente indisponível.\n` +
             `Tente novamente em alguns minutos.`
           );
         }
@@ -144,11 +144,11 @@ export default {
             return;
           }
           await m.react('❌');
-          return m.reply('> Erro: midia nao disponivel. Tente novamente.');
+          return m.reply('> Erro: mídia não disponível. Tente novamente.');
         }
 
         if (!isValidVideoBuffer(videoBuffer)) {
-          console.error(`[NSFW] ${command}: buffer invalido (nao e video). Primeiros bytes: ${videoBuffer.slice(0, 20).toString('hex')}`);
+          console.error(`[NSFW] ${command}: buffer inválido (não é vídeo). Primeiros bytes: ${videoBuffer.slice(0, 20).toString('hex')}`);
           if (mediaResult.url) {
             await client.sendMessage(m.chat, {
               video: { url: mediaResult.url },
@@ -160,19 +160,19 @@ export default {
             return;
           }
           await m.react('❌');
-          return m.reply('> Erro: midia corrompida. Tente novamente.');
+          return m.reply('> Erro: mídia corrompida. Tente novamente.');
         }
 
         if (bufferSize > COMPRESS_THRESHOLD) {
-          console.log(`[NSFW] ${command}: comprimindo video (${(bufferSize / 1024 / 1024).toFixed(2)}MB > ${(COMPRESS_THRESHOLD / 1024 / 1024).toFixed(0)}MB)`);
-          m.reply('⌛ Otimizando video pro WhatsApp...').catch(() => {});
+          console.log(`[NSFW] ${command}: comprimindo vídeo (${(bufferSize / 1024 / 1024).toFixed(2)}MB > ${(COMPRESS_THRESHOLD / 1024 / 1024).toFixed(0)}MB)`);
+          m.reply('⌛ Otimizando vídeo pro WhatsApp...').catch(() => {});
           try {
             videoBuffer = await compressVideoBuffer(videoBuffer);
             console.log(`[NSFW] ${command}: comprimido para ${(videoBuffer.length / 1024 / 1024).toFixed(2)}MB`);
           } catch (compErr) {
-            console.error(`[NSFW] ${command}: erro na compressao:`, compErr.message);
+            console.error(`[NSFW] ${command}: erro na compressão:`, compErr.message);
             if (mediaResult.url) {
-              console.log(`[NSFW] ${command}: compressao falhou, enviando por URL...`);
+              console.log(`[NSFW] ${command}: compressão falhou, enviando por URL...`);
               await client.sendMessage(m.chat, {
                 video: { url: mediaResult.url },
                 gifPlayback: true,
@@ -186,7 +186,7 @@ export default {
         }
 
         if (videoBuffer.length > MAX_WA_VIDEO_BYTES) {
-          console.warn(`[NSFW] ${command}: video muito grande (${(videoBuffer.length / 1024 / 1024).toFixed(2)}MB), enviando por URL`);
+          console.warn(`[NSFW] ${command}: vídeo muito grande (${(videoBuffer.length / 1024 / 1024).toFixed(2)}MB), enviando por URL`);
           if (mediaResult.url) {
             await client.sendMessage(m.chat, {
               video: { url: mediaResult.url },
