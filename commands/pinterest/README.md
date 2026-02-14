@@ -29,7 +29,7 @@ Comando no bot:
 
 ```txt
 .pin <termo|link>
-.pinterest <termo|link>
+.pinlink <termo|link>
 ```
 
 Exemplos:
@@ -39,7 +39,7 @@ Exemplos:
 .pin https://br.pinterest.com/pin/99360735500167749/
 ```
 
-Se o usuario enviar apenas `.pin` ou `.pinterest` sem argumento, o bot responde pedindo um termo ou link.
+Se o usuario enviar apenas `.pin` ou `.pinlink` sem argumento, o bot responde pedindo um termo ou link.
 
 Obs:
 - Modulo em ESM para uso direto em comandos carregados por `commandLoader`.

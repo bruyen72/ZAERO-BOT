@@ -1,10 +1,9 @@
 export default {
   command: ['d', 'delete', 'del', 'apagar'],
   category: 'utils',
-  isAdmin: true,
-  run: async (client, m, args, usedPrefix, command) => {
+  run: async (client, m, args, usedPrefix) => {
     if (!m.quoted) {
-      return m.reply(`《 ⚠️ 》 Responda à mensagem que você deseja apagar com *${usedPrefix + command}*`)
+      return m.reply(`Use *${usedPrefix}d* respondendo a mensagem que voce quer apagar.`)
     }
 
     try {
@@ -17,8 +16,7 @@ export default {
 
       await client.sendMessage(m.chat, { delete: key })
     } catch (e) {
-      // Se falhar, pode ser que o bot nao tenha permissao ou a mensagem seja muito antiga
-      await m.reply('《 ❌ 》 Não foi possível apagar a mensagem. Verifique se o bot é administrador.')
+      await m.reply('Nao foi possivel apagar a mensagem. Verifique se o bot e administrador.')
     }
   }
 }

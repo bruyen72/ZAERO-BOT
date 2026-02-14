@@ -1,2 +1,5 @@
-export { fetchPinterestImages } from './crawler.js'
-
+export {
+  buildQueryFallbacks,
+  fetchPinterestImages,
+  searchPinterestPins
+} from './crawler.js'

@@ -13,6 +13,8 @@ tmp/
 temp/
 *.tmp
 *.log
+data/seen_pins.json
+data/seen_image_search.json
 
 # Configurações locais
 .env
