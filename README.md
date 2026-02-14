@@ -102,7 +102,7 @@ node index.js
 | 👥 **Grupo** | `!kick`, `!promote`, `!welcome` | Gerenciamento |
 | 👤 **Perfil** | `!profile`, `!marry`, `!level` | Sistema de perfis |
 | 🎨 **Utilidades** | `!sticker`, `!translate`, `!chatgpt` | Ferramentas |
-| 🔞 **NSFW** | `!rule34`, `!xnxx` | Conteúdo adulto |
+| 🔞 **NSFW** | `!rule34`, `!redgifs` | Conteúdo adulto |
 | 👑 **Owner** | `!exec`, `!restart`, `!update` | Comandos do dono |
 
 ### **🔧 Recursos Técnicos:**

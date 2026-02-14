@@ -1,30 +1,29 @@
 # ===================================================================
-# DOCKERFILE ZAERO-BOT - VERSÃO ROBUSTA
-# Usa Node.js 20 (Debian) que já tem git instalado
+# DOCKERFILE ZAERO-BOT - VERSAO ROBUSTA
 # ===================================================================
 
 FROM node:20
 
-# Definir diretório de trabalho
 WORKDIR /app
 
-# Copiar arquivos de dependências
-COPY package*.json ./
+# FFmpeg para transcode de video RedGifs/WhatsApp
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates git ffmpeg \
+  && rm -rf /var/lib/apt/lists/*
 
-# Instalar dependências de produção
+COPY package*.json ./
 RUN npm install --omit=dev
 
-# Copiar todo o código do projeto
 COPY . .
 
-# Criar pasta de sessões
 RUN mkdir -p Sessions/Owner
 
-# Expor porta da API (se houver)
 EXPOSE 3000
 
-# Variável de ambiente
 ENV NODE_ENV=production
+ENV NODE_OPTIONS="--max-old-space-size=768 --expose-gc"
 
-# Comando de inicialização
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD node healthcheck.js || exit 1
+
 CMD ["node", "index.js"]

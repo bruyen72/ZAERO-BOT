@@ -1,5 +1,5 @@
 import "./settings.js"
-import main from './main.js'
+import main, { getMainQueueStats } from './main.js'
 import events from './commands/events.js'
 import { Browsers, makeWASocket, makeCacheableSignalKeyStore, useMultiFileAuthState, fetchLatestBaileysVersion, jidDecode, DisconnectReason, jidNormalizedUser, } from "@whiskeysockets/baileys";
 import cfonts from 'cfonts';
@@ -364,7 +364,7 @@ async function init() {
     const status = cmds.map(c => `${c}=${global.comandos?.has(c)}`).join('  ')
     console.log(chalk.white(`[CHECK] ${status}`))
     
-    console.log(chalk.white(`[CHECK] ffmpeg pipeline configurada com concorrência=2`))
+    console.log(chalk.white(`[CHECK] ffmpeg pipeline configurada com concorrência=1`))
     console.log(chalk.white(`[CHECK] media re-encode habilitado para MP4 H.264 baseline`))
     console.log(chalk.cyan.bold('──────────────────────────────\n'))
   }, 5000)
@@ -390,6 +390,31 @@ const __dirname = dirname(__filename)
 const app = express()
 app.set('trust proxy', 1)
 const PORT = process.env.PORT || 3000
+const BOOT_TIME_MS = Date.now()
+
+function toMB(bytes = 0) {
+  return Number((Number(bytes || 0) / 1024 / 1024).toFixed(2))
+}
+
+function buildHealthPayload() {
+  const mem = process.memoryUsage()
+  const queue = getMainQueueStats()
+  return {
+    status: 'ok',
+    connected: Boolean(global.client?.user?.id),
+    uptimeSec: Math.floor((Date.now() - BOOT_TIME_MS) / 1000),
+    timestamp: new Date().toISOString(),
+    node: process.version,
+    memoryMB: {
+      rss: toMB(mem.rss),
+      heapUsed: toMB(mem.heapUsed),
+      heapTotal: toMB(mem.heapTotal),
+      external: toMB(mem.external),
+      arrayBuffers: toMB(mem.arrayBuffers),
+    },
+    queue,
+  }
+}
 
 // Middleware
 app.use(cors())
@@ -425,6 +450,28 @@ app.get('/connect.html', (req, res) => {
 })
 
 app.use(express.static(join(__dirname, 'public')))
+
+// Healthcheck público para Fly.io
+app.get('/health', (req, res) => {
+  const payload = buildHealthPayload()
+  const rssLimitMb = Number(process.env.BOT_HEALTH_RSS_LIMIT_MB || 900)
+  const queueLimit = Number(process.env.BOT_HEALTH_QUEUE_LIMIT || 5000)
+  const rssCritical = payload.memoryMB.rss >= rssLimitMb
+  const queueCritical = Number(payload.queue?.chat?.pendingGlobal || 0) >= queueLimit
+
+  if (rssCritical || queueCritical) {
+    return res.status(503).json({
+      ...payload,
+      status: 'degraded',
+      critical: {
+        rssCritical,
+        queueCritical,
+      },
+    })
+  }
+
+  return res.status(200).json(payload)
+})
 
 // ===================================================================
 // SISTEMA DE AUTENTICAÇÃO

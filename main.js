@@ -15,6 +15,7 @@ import { ChatTaskQueue } from './lib/system/taskQueue.js';
 import {
   executeCommandTask,
   getCommandTimeoutMs,
+  getHeavyTaskStats,
   isHeavyCommand,
 } from './lib/system/heavyTaskManager.js';
 
@@ -27,11 +28,35 @@ const recentMessageIds = new Map();
 // ? Reduzido para 3 segundos para permitir respostas mais r�pidas
 const MENU_DEDUP_WINDOW_MS = 3000;
 const MESSAGE_DEDUP_WINDOW_MS = 10000;
+const BUSY_NOTICE_WINDOW_MS = 10 * 1000;
+const busyNoticeByChat = new Map();
 
 const chatTaskQueue = new ChatTaskQueue({
   maxPendingPerChat: Number(process.env.BOT_CHAT_QUEUE_MAX_PENDING || 120),
   maxPendingGlobal: Number(process.env.BOT_QUEUE_MAX_PENDING || 6000),
+  maxConcurrentGlobal: Number(process.env.BOT_QUEUE_MAX_CONCURRENT || 4),
 });
+
+function shouldSendBusyNotice(chatId) {
+  const key = String(chatId || 'unknown');
+  const now = Date.now();
+  if (busyNoticeByChat.size > 1000) {
+    for (const [chatKey, ts] of busyNoticeByChat.entries()) {
+      if (now - ts > BUSY_NOTICE_WINDOW_MS) busyNoticeByChat.delete(chatKey);
+    }
+  }
+  const prev = busyNoticeByChat.get(key) || 0;
+  if (now - prev < BUSY_NOTICE_WINDOW_MS) return false;
+  busyNoticeByChat.set(key, now);
+  return true;
+}
+
+export function getMainQueueStats() {
+  return {
+    chat: chatTaskQueue.getStats(),
+    heavy: getHeavyTaskStats(),
+  };
+}
 function pruneRecentMenuRequests(now = Date.now()) {
   if (recentMenuRequests.size < 200) return;
   for (const [key, timestamp] of recentMenuRequests.entries()) {
@@ -64,6 +89,11 @@ export default function onMessage(client, m) {
     )
     .catch((error) => {
       console.error(`? Erro ao enfileirar/processar mensagem (${chatId}): ${error?.message || error}`);
+      if (/Fila (global|do chat) cheia/i.test(String(error?.message || '')) && shouldSendBusyNotice(chatId)) {
+        client
+          .sendMessage(chatId, { text: '⚠️ Bot ocupado agora. Tente novamente em alguns segundos.' })
+          .catch(() => {});
+      }
     });
 }
 
@@ -199,13 +229,18 @@ async function processMessage(client, m) {
     console.log(chalk.cyan(`[${timestamp}] `) + chalk.white(`${pushname} | ${location}: `) + chalk.green(`${usedPrefix}${command}`));
   }
 
-  // 7. Restrições
+  // 7. Restrições e Rate Limit (ZÆRØ DARK)
   if (!isOwners && settings.self) return
   
-  // ✅ CORREÇÃO: Permitir comandos em privado sem lista restritiva (atendendo pedido do usuário)
+  // Rate Limit por Usuário (1 comando a cada 1.5s)
+  const userRateLimit = 1500;
+  if (!isOwners && (Date.now() - (user.lastCommandTime || 0)) < userRateLimit) {
+    return; // Ignora silenciosamente para não poluir
+  }
+  user.lastCommandTime = Date.now();
+
   if (!m.isGroup && !isOwners) {
-    // Se quiser manter algum bloqueio para comandos perigosos em privado, faça aqui.
-    // Caso contrário, removemos a restrição allowedInPrivate.
+    // Comandos liberados em privado
   }
 
   if (chat?.isBanned && !isOwners && resolvedCommand !== 'bot') return
@@ -256,13 +291,10 @@ async function processMessage(client, m) {
 
     const heavyCommand = isHeavyCommand(cmdData, resolvedCommand)
     const timeoutMs = getCommandTimeoutMs(cmdData, resolvedCommand, heavyCommand)
-    const autoProcessingAck = heavyCommand && cmdData?.info?.autoAck !== false
-
-    if (autoProcessingAck) {
-      m.react('\u23F3').catch(() => {})
-    }
-
+    
     await executeCommandTask(
+      client,
+      m,
       () => cmdData.run(client, m, args, usedPrefix, resolvedCommand, text),
       {
         heavy: heavyCommand,
@@ -272,6 +304,8 @@ async function processMessage(client, m) {
     )
     setImmediate(() => level(m));
   } catch (error) {
+    // Silencia erros de timeout já tratados no manager
+    if (error.isTimeout) return;
     console.error(error)
     await client.sendMessage(m.chat, { text: `❌ Erro no comando ${command}:\n${error.message}` }, { quoted: m })
   }

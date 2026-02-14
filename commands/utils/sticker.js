@@ -13,11 +13,16 @@ import { runFfmpeg } from '../../lib/system/ffmpeg.js'
 // --- CONFIGURAÇÕES TÉCNICAS PROFISSIONAIS ---
 const LIMIT_IMAGE_BYTES = 100 * 1024          // 100KB (WhatsApp Standard)
 const LIMIT_ANIM_BYTES = 500 * 1024           // 500KB (WhatsApp Standard)
-const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024    // 25MB (Streaming Protection)
+const MAX_DOWNLOAD_BYTES = 12 * 1024 * 1024    // 12MB (Strict Limit)
 const FETCH_TIMEOUT_MS = 30000                // 30s
-const FFMPEG_TIMEOUT_MS = 90000               // 90s (timeout real)
-const MAX_VIDEO_SECONDS_HD = 10               // 10s em HD
-const MAX_VIDEO_SECONDS_LITE = 8              // 8s em LITE para garantir compressão
+const FFMPEG_TIMEOUT_MS = 90000               // 90s
+const MAX_VIDEO_SECONDS_HD = 8                // Reduzido para 8s conforme pedido
+const MAX_VIDEO_SECONDS_LITE = 6              // Reduzido para 6s conforme pedido
+
+const DARK_MSG = {
+  heavy: "❌ *Excede o limite.*\n🩸 Reduza para 6–8s.",
+  success: "🔥 *Poder materializado.*"
+};
 
 export default {
   command: ['sticker', 's'],
@@ -36,6 +41,13 @@ export default {
 
       const quoted = m.quoted ? m.quoted : m
       const mime = (quoted.msg || quoted).mimetype || ''
+      
+      // Validação Estrita de Tamanho (ZÆRØ DARK)
+      const fileSize = (quoted.msg || quoted).fileLength || 0
+      if (fileSize > MAX_DOWNLOAD_BYTES) {
+        return m.reply(DARK_MSG.heavy)
+      }
+
       const user = global.db?.data?.users?.[m.sender] || {}
       const texto1 = user.metadatos || '✧ ZÆRØ BOT ✧'
       const texto2 = user.metadatos2 || ''
@@ -46,8 +58,10 @@ export default {
       const author = marca.length > 1 ? marca[1] : texto2
       const mode = flags.hd ? 'hd' : 'lite'
 
-      const replyProcessing = async (text = '《✧》 Gerando figurinha profissional...') => {
-        try { await client.reply(m.chat, text, m) } catch {}
+      // Mensagem de sucesso ao final (opcional, conforme pedido)
+      const sendSuccess = async () => {
+         // await client.sendMessage(m.chat, { text: DARK_MSG.success }, { quoted: m }).catch(() => {})
+         await m.react('🔥').catch(() => {})
       }
 
       // --- A) DOWNLOAD POR STREAMING (Anti-OOM) ---
@@ -137,11 +151,13 @@ export default {
         if (!success && fs.existsSync(outWebp)) {
            // Se apos todas as tentativas ainda for maior, mas existir, envia o menor gerado (ou erro)
            if (fs.statSync(outWebp).size > LIMIT_ANIM_BYTES + (50 * 1024)) {
-             throw new Error('Não foi possível comprimir o vídeo para 500KB. Tente um vídeo mais curto ou use -lite.')
+             throw new Error(DARK_MSG.heavy)
            }
         }
 
-        return await sendSticker(outWebp, pack, author, cleanupPaths, client, m)
+        await sendSticker(outWebp, pack, author, cleanupPaths, client, m)
+        await sendSuccess()
+        return
       }
 
       // --- C) PROCESSAMENTO DE IMAGEM (Até 100KB) ---
@@ -166,7 +182,9 @@ export default {
           }
         }
 
-        return await sendSticker(outWebp, pack, author, cleanupPaths, client, m)
+        await sendSticker(outWebp, pack, author, cleanupPaths, client, m)
+        await sendSuccess()
+        return
       }
 
       // --- LOGICA PRINCIPAL DE EXECUÇÃO ---
@@ -207,6 +225,7 @@ export default {
         } else {
           await makeStickerFromImageFile(inPath)
         }
+        await sendSuccess()
         return safeCleanupAll()
       }
 

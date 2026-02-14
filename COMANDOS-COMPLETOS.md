@@ -342,8 +342,6 @@ Garanti que **100% dos comandos originais** estão presentes, apenas com formata
 ## 🔞 NSFW - COMPLETO ✅
 
 ### Buscar Conteúdo (5 comandos)
-- ✅ xnxx
-- ✅ xvideos
 - ✅ danbooru
 - ✅ gelbooru
 - ✅ rule34
