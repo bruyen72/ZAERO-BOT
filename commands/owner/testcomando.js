@@ -31,6 +31,7 @@ function percentile(list = [], p = 95) {
 
 function parseInput(args = []) {
   const cfg = {
+    preset: 'custom',
     profile: 'mix', // mix | sticker | red
     users: 4,
     rounds: 1,
@@ -40,11 +41,39 @@ function parseInput(args = []) {
     timeoutMs: 90000,
   }
 
+  const PRESETS = {
+    rapido: {
+      preset: 'rapido',
+      profile: 'mix',
+      users: 4,
+      rounds: 1,
+      durationSec: 2,
+      query: 'ass',
+      redMode: 'video',
+      timeoutMs: 90000,
+    },
+    extremo: {
+      preset: 'extremo',
+      profile: 'mix',
+      users: 4,
+      rounds: 2,
+      durationSec: 4,
+      query: 'ass',
+      redMode: 'both',
+      timeoutMs: 120000,
+    },
+  }
+
   const free = []
   for (const raw of args) {
     const token = String(raw || '').trim()
     const lower = normalizeText(token)
     if (!token) continue
+
+    if (PRESETS[lower]) {
+      Object.assign(cfg, PRESETS[lower])
+      continue
+    }
 
     if (lower.startsWith('-users=') || lower.startsWith('-u=')) {
       const value = lower.includes('-users=') ? lower.slice(7) : lower.slice(3)
@@ -75,6 +104,7 @@ function parseInput(args = []) {
     }
 
     if (['mix', 'sticker', 'red', 'video'].includes(lower)) {
+      cfg.preset = 'custom'
       cfg.profile = lower === 'video' ? 'red' : lower
       continue
     }
@@ -333,19 +363,23 @@ export default {
     const ffAfter = getFfmpegQueueStats()
     const memAfter = memorySnapshot()
 
-    const failRate = summary.total > 0 ? summary.fail / summary.total : 1
-    const travou = summary.timeout > 0 || failRate >= 0.25
+    const redEmptyFail = results.filter((r) => !r.ok && r.kind === 'red' && r.error === 'empty').length
+    const criticalFail = results.filter((r) => !r.ok && !(r.kind === 'red' && r.error === 'empty')).length
+    const criticalFailRate = summary.total > 0 ? criticalFail / summary.total : 1
+    const travou = summary.timeout > 0 || criticalFailRate >= 0.25
     const status = travou ? 'SIM' : 'NAO'
 
     const lines = [
       '*BENCH COMANDO*',
       `travou: ${status}`,
+      `preset=${cfg.preset}`,
       `perfil=${cfg.profile} users=${cfg.users} rounds=${cfg.rounds} totalJobs=${summary.total}`,
       `redMode solicitado=${cfg.redMode} efetivo=${redModeEffective}`,
       `query="${cfg.query}"`,
       '',
       '[resultado geral]',
       `ok=${summary.ok} fail=${summary.fail} timeout=${summary.timeout}`,
+      `fail_critico=${criticalFail} fail_red_empty=${redEmptyFail}`,
       `tempo total=${totalMs}ms avg=${summary.avgMs.toFixed(0)}ms p95=${summary.p95.toFixed(0)}ms`,
       '',
       '[por tipo]',
@@ -368,7 +402,7 @@ export default {
       '2) Para sticker sob carga: .s -lite e video <= 6s',
       '3) Em pico: manter ffmpeg concorrencia=1',
       '',
-      `uso: ${usedPrefix}testcomando [mix|sticker|red] [termo] [-users=4] [-rounds=1] [-dur=3] [-mode=video|gif|both]`,
+      `uso: ${usedPrefix}testcomando [rapido|extremo|mix|sticker|red] [termo] [-users=4] [-rounds=1] [-dur=3] [-mode=video|gif|both]`,
     ]
 
     await client.reply(m.chat, lines.join('\n'), m)
