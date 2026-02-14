@@ -1,5 +1,6 @@
 import { resolveLidToRealJid } from '../../lib/utils.js'
 import { fetchNsfwMedia } from '../../lib/mediaFetcher.js'
+import { promises as fs } from 'fs'
 import {
   COMPRESS_THRESHOLD,
   MAX_DOWNLOAD_VIDEO_BYTES,
@@ -136,6 +137,30 @@ async function loadAndNormalizeVideo(mediaResult, logLabel = 'nsfw') {
   const fallbackUrl = mediaResult?.url || null
   const fallbackHeaders = buildDownloadHeaders(mediaResult?.pageUrl || '')
 
+  if ((!videoBuffer || videoBuffer.length === 0) && mediaResult?.optimized === true && mediaResult?.file) {
+    try {
+      videoBuffer = await fs.readFile(String(mediaResult.file))
+      if (!isValidVideoBuffer(videoBuffer)) videoBuffer = null
+      if (videoBuffer) {
+        console.log(
+          `[NSFW] ${logLabel}: usando arquivo otimizado em cache (${(videoBuffer.length / 1024 / 1024).toFixed(2)}MB)`,
+        )
+      }
+    } catch (error) {
+      console.warn(`[NSFW] ${logLabel}: falha ao ler arquivo otimizado (${error.message})`)
+    }
+  }
+
+  if (
+    mediaResult?.optimized === true &&
+    Buffer.isBuffer(videoBuffer) &&
+    videoBuffer.length > 0 &&
+    videoBuffer.length <= MAX_WA_VIDEO_BYTES &&
+    isValidVideoBuffer(videoBuffer)
+  ) {
+    return videoBuffer
+  }
+
   if (!videoBuffer || videoBuffer.length === 0) {
     if (!fallbackUrl) throw new Error('Midia nao disponivel para download.')
 
@@ -230,6 +255,11 @@ export default {
           excludeIds: redgifsHistory,
           maxPages: 3,
           perPage: 40,
+          nicheOverride: currentCommand,
+          strictQuery: true,
+          preferredMediaType: 'video',
+          optimizeVideos: true,
+          optimizeMaxSourceBytes: 100 * 1024 * 1024,
         })
 
         if (!mediaResult) {

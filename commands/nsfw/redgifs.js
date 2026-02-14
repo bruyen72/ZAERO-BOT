@@ -1,4 +1,5 @@
 import { fetchMediaSafe, fetchNsfwMedia, resolveNsfwVideo } from '../../lib/mediaFetcher.js'
+import { promises as fs } from 'fs'
 import {
   COMPRESS_THRESHOLD,
   MAX_DOWNLOAD_VIDEO_BYTES,
@@ -15,8 +16,83 @@ import {
 const SEARCH_MAX_ATTEMPTS = 4
 const FETCH_TIMEOUT_MS = 30000
 
+const MEDIA_MODE_ALIASES = Object.freeze({
+  video: 'video',
+  v: 'video',
+  gif: 'gif',
+  g: 'gif',
+  both: 'both',
+  all: 'both',
+  ambos: 'both',
+  todos: 'both',
+})
+
 function isRedgifsUrl(value = '') {
   return /https?:\/\/(?:www\.)?(?:redgifs\.com|media\.redgifs\.com)\//i.test(String(value))
+}
+
+function normalizeText(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+}
+
+function isLikelyRedgifsId(value = '') {
+  const normalized = normalizeText(value)
+  return /^[a-z0-9]{12,64}$/.test(normalized)
+}
+
+function parseSearchInput(rawInput = '') {
+  const chunks = String(rawInput || '')
+    .split(/\s+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+  let mode = 'video'
+  let tags = ''
+  const queryParts = []
+
+  for (let index = 0; index < chunks.length; index += 1) {
+    const value = chunks[index]
+    const normalized = normalizeText(value)
+
+    if (index === 0 && MEDIA_MODE_ALIASES[normalized]) {
+      mode = MEDIA_MODE_ALIASES[normalized]
+      continue
+    }
+
+    if (normalized.startsWith('tags:') || normalized.startsWith('tag:') || normalized.startsWith('tags=')) {
+      const explicitTags = value.replace(/^[^:=]+[:=]/i, '').trim()
+      if (explicitTags) tags = explicitTags
+      continue
+    }
+
+    queryParts.push(value)
+  }
+
+  let query = queryParts.join(' ').trim()
+  if (!query && tags) {
+    query = tags
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .join(' ')
+  }
+
+  return { mode, tags, query }
+}
+
+function allowedMediaTypesForMode(mode = 'video') {
+  if (mode === 'gif') return ['gif', 'video']
+  if (mode === 'both') return ['video', 'gif']
+  return ['video']
+}
+
+function preferredMediaTypeForMode(mode = 'video') {
+  if (mode === 'gif') return 'gif'
+  return 'video'
 }
 
 function buildDownloadHeaders(pageUrl = '') {
@@ -31,13 +107,25 @@ function buildDownloadHeaders(pageUrl = '') {
   }
 }
 
-function pickBestCandidate(candidates = []) {
+function pickBestCandidate(candidates = [], preferredMediaType = 'video') {
   if (!Array.isArray(candidates) || candidates.length === 0) return null
+
+  if (preferredMediaType === 'gif') {
+    return (
+      candidates.find((item) => item.mediaType === 'gif' && item.url.includes('.gif')) ||
+      candidates.find((item) => item.mediaType === 'gif') ||
+      candidates.find((item) => item.mediaType === 'video' && item.url.includes('hd.mp4')) ||
+      candidates.find((item) => item.mediaType === 'video' && item.url.includes('.mp4') && !item.url.includes('silent')) ||
+      candidates.find((item) => item.mediaType === 'video') ||
+      null
+    )
+  }
 
   return (
     candidates.find((item) => item.mediaType === 'video' && item.url.includes('hd.mp4')) ||
     candidates.find((item) => item.mediaType === 'video' && item.url.includes('.mp4') && !item.url.includes('silent')) ||
     candidates.find((item) => item.mediaType === 'video' && item.url.includes('.mp4')) ||
+    candidates.find((item) => item.mediaType === 'gif') ||
     candidates.find((item) => item.mediaType === 'video') ||
     null
   )
@@ -173,10 +261,44 @@ async function sendByUrl(client, m, url, caption, logLabel = 'redgifs-url', head
   }
 }
 
+async function readOptimizedFileBuffer(mediaResult, logLabel = 'redgifs') {
+  const filePath = String(mediaResult?.file || '').trim()
+  if (!filePath) return null
+
+  try {
+    const fromFile = await fs.readFile(filePath)
+    if (!isValidVideoBuffer(fromFile)) return null
+    console.log(`[RedGifs] ${logLabel}: usando arquivo otimizado em cache (${(fromFile.length / 1024 / 1024).toFixed(2)}MB)`)
+    return fromFile
+  } catch (error) {
+    console.warn(`[RedGifs] ${logLabel}: falha ao ler arquivo otimizado (${error.message})`)
+    return null
+  }
+}
+
 async function sendResultProcessed(client, m, mediaResult, caption, logLabel = 'redgifs') {
   const fallbackUrl = mediaResult?.url || null
   const fallbackHeaders = buildDownloadHeaders(mediaResult?.pageUrl || '')
   let videoBuffer = Buffer.isBuffer(mediaResult?.buffer) ? mediaResult.buffer : null
+
+  if ((!videoBuffer || videoBuffer.length === 0) && mediaResult?.optimized === true) {
+    videoBuffer = await readOptimizedFileBuffer(mediaResult, `${logLabel}:file`)
+  }
+
+  if (
+    mediaResult?.optimized === true &&
+    Buffer.isBuffer(videoBuffer) &&
+    videoBuffer.length > 0 &&
+    videoBuffer.length <= MAX_WA_VIDEO_BYTES &&
+    isValidVideoBuffer(videoBuffer)
+  ) {
+    try {
+      return await sendTranscodedBuffer(client, m, videoBuffer, caption)
+    } catch (error) {
+      console.error(`[RedGifs] ${logLabel}: envio direto do arquivo otimizado falhou (${error.message})`)
+      if (!fallbackUrl) throw error
+    }
+  }
 
   if (!videoBuffer || videoBuffer.length === 0) {
     if (!fallbackUrl) throw new Error('Sem buffer e sem URL para download')
@@ -213,9 +335,9 @@ async function sendResultProcessed(client, m, mediaResult, caption, logLabel = '
   }
 }
 
-async function resolveDirectInput(input) {
+async function resolveDirectInput(input, options = {}) {
   const parsed = await resolveNsfwVideo(input)
-  const best = pickBestCandidate(parsed?.candidates || [])
+  const best = pickBestCandidate(parsed?.candidates || [], options.preferredMediaType || 'video')
 
   if (!best?.url) {
     throw new Error('Nao encontrei midia animada neste link.')
@@ -239,17 +361,22 @@ async function resolveDirectInput(input) {
   }
 }
 
-async function fetchUniqueSearchResult(query, excludeIds = []) {
+async function fetchUniqueSearchResult(query, excludeIds = [], options = {}) {
   return fetchNsfwMedia(query, null, {
-    allowedMediaTypes: ['video'],
+    allowedMediaTypes: options.allowedMediaTypes || ['video'],
     source: 'redgifs',
     allowStaticFallback: false,
     uniqueIds: true,
     excludeIds,
     maxPages: 3,
     perPage: 40,
-    nicheOverride: query,
+    nicheOverride: options.nicheOverride || query,
     strictQuery: true,
+    redgifsTags: options.tags || '',
+    directIdHint: options.directIdHint || '',
+    preferredMediaType: options.preferredMediaType || 'video',
+    optimizeVideos: true,
+    optimizeMaxSourceBytes: 100 * 1024 * 1024,
   })
 }
 
@@ -263,8 +390,27 @@ export default {
 
     const input = args.join(' ').trim()
     if (!input) {
-      return m.reply(`Use assim:\n- *${usedPrefix + command} <termo>*\n- *${usedPrefix + command} <url do redgifs>*\n\nExemplo: *${usedPrefix + command} blowjob*`)
+      return m.reply(
+        `Use assim:\n` +
+          `- *${usedPrefix + command} <termo>*\n` +
+          `- *${usedPrefix + command} <video|gif|both> <termo>*\n` +
+          `- *${usedPrefix + command} tags:<tag1,tag2> <termo opcional>*\n` +
+          `- *${usedPrefix + command} <url do redgifs>*\n\n` +
+          `Exemplos:\n` +
+          `*${usedPrefix + command} ass*\n` +
+          `*${usedPrefix + command} gif ass*\n` +
+          `*${usedPrefix + command} tags:big-ass,pawg ass*`,
+      )
     }
+
+    const parsedInput = parseSearchInput(input)
+    if (!parsedInput.query) {
+      return m.reply(`Informe um termo ou URL.\nExemplo: *${usedPrefix + command} ass*`)
+    }
+    const allowedMediaTypes = allowedMediaTypesForMode(parsedInput.mode)
+    const preferredMediaType = preferredMediaTypeForMode(parsedInput.mode)
+    const queryInput = parsedInput.query
+    const directIdHint = isLikelyRedgifsId(queryInput) ? queryInput : ''
 
     const chatData = ensureChatData(m.chat)
     const history = getChatRedgifsHistory(chatData)
@@ -273,10 +419,10 @@ export default {
     try {
       await m.react('\u23F3')
 
-      if (isRedgifsUrl(input)) {
+      if (isRedgifsUrl(queryInput)) {
         await withChatNsfwQueue(m.chat, async () => {
-          const mediaResult = await resolveDirectInput(input)
-          const caption = buildCaption(mediaResult, mediaResult.pageUrl || input)
+          const mediaResult = await resolveDirectInput(queryInput, { preferredMediaType })
+          const caption = buildCaption(mediaResult, mediaResult.pageUrl || queryInput)
           const sent = await sendResultProcessed(client, m, mediaResult, caption, command)
 
           if (!sent) {
@@ -296,7 +442,13 @@ export default {
         for (let attempt = 1; attempt <= SEARCH_MAX_ATTEMPTS; attempt += 1) {
           let mediaResult = null
           try {
-            mediaResult = await fetchUniqueSearchResult(input, [...attemptedIds])
+            mediaResult = await fetchUniqueSearchResult(queryInput, [...attemptedIds], {
+              allowedMediaTypes,
+              tags: parsedInput.tags,
+              directIdHint,
+              preferredMediaType,
+              nicheOverride: queryInput,
+            })
           } catch {
             continue
           }
@@ -307,7 +459,7 @@ export default {
           if (currentId && attemptedIds.has(currentId)) continue
           if (currentId) attemptedIds.add(currentId)
 
-          const caption = buildCaption(mediaResult, mediaResult.pageUrl || mediaResult.url || input)
+          const caption = buildCaption(mediaResult, mediaResult.pageUrl || mediaResult.url || queryInput)
 
           try {
             const sentThisAttempt = await sendResultProcessed(client, m, mediaResult, caption, `${command}#${attempt}`)
