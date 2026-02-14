@@ -65,7 +65,7 @@ async function sendByUrl(client, m, url, caption) {
   if (!url) return false
   // Nota: Enviar por URL pode causar tela cinza se o RedGifs não estiver em formato compatível.
   // Mas serve como último recurso (fallback).
-  await client.sendMessage(m.chat, { video: { url }, caption }, { quoted: m })
+  await client.sendMessage(m.chat, { video: { url }, caption, gifPlayback: true }, { quoted: m })
   return true
 }
 
@@ -109,7 +109,7 @@ async function sendResultProcessed(client, m, mediaResult, caption, logLabel = '
   }
 
   try {
-    await client.sendMessage(m.chat, { video: videoBuffer, caption }, { quoted: m })
+    await client.sendMessage(m.chat, { video: videoBuffer, caption, gifPlayback: true }, { quoted: m })
     return true
   } catch (error) {
     console.error(`[RedGifs] ${logLabel}: envio por buffer falhou (${error.message}), tentando URL...`)

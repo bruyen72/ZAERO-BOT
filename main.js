@@ -142,12 +142,6 @@ async function processMessage(client, m) {
   let command = '', args = [], text = '', usedPrefix = ''
 
   if (fullText.startsWith(PREFIX)) {
-    // Verificar se após o "." não tem espaço (". menu" é inválido)
-    if (fullText.length > 1 && fullText[1] === ' ') {
-      // ". menu" (ponto + espaço) → IGNORAR completamente
-      return
-    }
-
     // Extrai o comando SEM o prefixo
     const content = fullText.slice(PREFIX.length).trim()
 
@@ -156,6 +150,9 @@ async function processMessage(client, m) {
       args = content.split(/\s+/)
       command = args.shift().toLowerCase()
       text = args.join(' ')
+      
+      // ✅ [DEBUG] Log de extração de comando (Solicitado pelo usuário)
+      console.log(chalk.gray(`[DEBUG] Parser: prefixo=${usedPrefix} comando=${command} args=${args.length}`))
     }
   }
   const resolvedCommand = command ? (commandAliases[command] || command) : ''
@@ -204,9 +201,11 @@ async function processMessage(client, m) {
 
   // 7. Restrições
   if (!isOwners && settings.self) return
+  
+  // ✅ CORREÇÃO: Permitir comandos em privado sem lista restritiva (atendendo pedido do usuário)
   if (!m.isGroup && !isOwners) {
-    const allowedInPrivate = ['menu', 'help', 'ajuda', 'allmenu', 'report', 'suggest', 'qr', 'code']
-    if (command && !allowedInPrivate.includes(resolvedCommand)) return
+    // Se quiser manter algum bloqueio para comandos perigosos em privado, faça aqui.
+    // Caso contrário, removemos a restrição allowedInPrivate.
   }
 
   if (chat?.isBanned && !isOwners && resolvedCommand !== 'bot') return

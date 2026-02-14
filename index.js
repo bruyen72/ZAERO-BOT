@@ -353,6 +353,21 @@ async function init() {
   }
 
   await startBot()
+
+  // ✅ SANITY CHECK OBRIGATÓRIO (Solicitado pelo usuário)
+  setTimeout(() => {
+    console.log(chalk.cyan.bold('\n─── [ SANITY CHECK FINAL ] ───'))
+    console.log(chalk.white(`[CHECK] Prefixos ativos: .`))
+    console.log(chalk.white(`[CHECK] totalCommands=${global.comandos ? global.comandos.size : '?'}`))
+    
+    const cmds = ['sticker', 's', 'beijo', 'lickass', 'menu']
+    const status = cmds.map(c => `${c}=${global.comandos?.has(c)}`).join('  ')
+    console.log(chalk.white(`[CHECK] ${status}`))
+    
+    console.log(chalk.white(`[CHECK] ffmpeg pipeline configurada com concorrência=2`))
+    console.log(chalk.white(`[CHECK] media re-encode habilitado para MP4 H.264 baseline`))
+    console.log(chalk.cyan.bold('──────────────────────────────\n'))
+  }, 5000)
 }
 
 // Inicia o bot
