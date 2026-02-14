@@ -2,6 +2,7 @@ import fs from 'fs'
 import moment from 'moment-timezone'
 import { getDevice } from '@whiskeysockets/baileys'
 import { apiCache } from '../../lib/cache.js'
+import { bodyMenu, menuObject } from '../../lib/commands.js'
 
 function normalize(text = '') {
   return String(text || '')
@@ -31,120 +32,31 @@ function resolveOwnerDisplayName(owner = '') {
   return raw
 }
 
-const categoryAlias = {
-  ai: ['ai', 'ia', 'chatgpt'],
-  anime: ['anime', 'animes'],
-  downloads: ['download', 'downloads', 'downloader', 'baixar', 'midia', 'apk', 'redes', 'social'],
-  economy: ['economy', 'economia'],
-  fun: ['fun', 'diversao'],
-  gacha: ['gacha'],
-  github: ['github', 'git'],
-  grupo: ['group', 'grupo', 'grupos'],
-  info: ['info', 'informacoes', 'menu', 'ajuda', 'comandos'],
-  internet: ['internet'],
-  mod: ['mod', 'moderacao'],
-  nsfw: ['nsfw', '18'],
-  owner: ['owner', 'dono'],
-  profile: ['profile', 'perfil'],
-  rpg: ['rpg'],
-  search: ['search', 'pesquisa', 'buscar'],
-  socket: ['socket', 'sockets', 'bot', 'bots'],
-  stickers: ['sticker', 'stickers'],
-  tools: ['tools', 'ferramentas'],
-  uncategorized: ['uncategorized', 'outros'],
-  utils: ['utils', 'utilitarios']
-}
-
-const categoryLabel = {
-  ai: 'IA',
-  anime: 'Anime',
-  downloads: 'Downloads',
-  economy: 'Economia',
-  fun: 'Diversao',
-  gacha: 'Gacha',
-  github: 'GitHub',
-  grupo: 'Grupo',
-  info: 'Info',
-  internet: 'Internet',
-  mod: 'Moderacao',
-  nsfw: 'NSFW',
-  owner: 'Dono',
-  profile: 'Perfil',
-  rpg: 'RPG',
-  search: 'Pesquisa',
-  socket: 'Sockets',
-  stickers: 'Stickers',
-  tools: 'Ferramentas',
-  uncategorized: 'Outros',
-  utils: 'Utilitarios'
-}
-
 const categoryRemap = {
   download: 'downloads',
   downloader: 'downloads',
   group: 'grupo',
   sticker: 'stickers',
-  tool: 'tools'
+  tool: 'utils',
+  ia: 'utils',
+  ai: 'utils',
+  redes: 'redes',
+  social: 'redes',
+  anime: 'anime',
+  profile: 'profile',
+  perfil: 'profile',
+  grupo: 'grupo',
+  bot: 'bot',
+  owner: 'owner',
+  dono: 'owner',
+  nsfw: 'nsfw'
 }
 
-function canonicalCategory(category = '') {
-  const key = normalize(category)
-  if (!key) return 'uncategorized'
-  return categoryRemap[key] || key
-}
-
-function resolveCategory(input = '', available = []) {
+function resolveCategory(input = '') {
   const key = normalize(input)
   if (!key) return null
-
-  for (const [category, aliases] of Object.entries(categoryAlias)) {
-    if (aliases.map(normalize).includes(key)) {
-      return available.includes(category) ? category : null
-    }
-  }
-
-  return available.includes(key) ? key : null
-}
-
-function buildCategoryList(available = [], counts = new Map()) {
-  return available
-    .slice()
-    .sort((a, b) => a.localeCompare(b))
-    .map((cat) => `- ${categoryLabel[cat] || cat} (${counts.get(cat) || 0})`)
-    .join('\n')
-}
-
-function chunkCommands(commands = [], size = 18) {
-  const chunks = []
-  for (let i = 0; i < commands.length; i += size) {
-    chunks.push(commands.slice(i, i + size))
-  }
-  return chunks
-}
-
-function buildCommandMap() {
-  const buckets = new Map()
-
-  for (const [cmd, data] of global.comandos.entries()) {
-    const category = canonicalCategory(data?.category || 'uncategorized')
-    if (!buckets.has(category)) buckets.set(category, new Set())
-    buckets.get(category).add(String(cmd).toLowerCase())
-  }
-
-  return buckets
-}
-
-function getMenuHeader({ botname, owner, senderMention, users, uptime, device, dateText, timeText }) {
-  return [
-    '*MENU DE COMANDOS*',
-    `Bot: ${botname}`,
-    `Dono: ${owner}`,
-    `Usuario: ${senderMention}`,
-    `Usuarios: ${users.toLocaleString('pt-BR')}`,
-    `Online: ${uptime}`,
-    `Dispositivo: ${device}`,
-    `Data: ${dateText}  Hora: ${timeText}`
-  ].join('\n')
+  if (menuObject[key]) return key
+  return categoryRemap[key] || null
 }
 
 export default {
@@ -152,14 +64,8 @@ export default {
   category: 'info',
   run: async (client, m, args, usedPrefix, command) => {
     try {
-      const commandMap = buildCommandMap()
-      const availableCategories = Array.from(commandMap.keys()).sort((a, b) => a.localeCompare(b))
-      const categoryCounts = new Map(
-        availableCategories.map((cat) => [cat, (commandMap.get(cat) || new Set()).size])
-      )
-
       const rawCategory = String(args[0] || '').trim()
-      const resolvedCategory = resolveCategory(rawCategory, availableCategories)
+      const resolvedCategory = resolveCategory(rawCategory)
       const cacheKey = `menu_text_${m.sender}_${normalize(rawCategory || 'all')}`
       let payload = apiCache.get(cacheKey)
 
@@ -169,58 +75,30 @@ export default {
         const botname = normalizeBotDisplayName(botSettings.botname || botSettings.namebot || global.botName)
         const owner = resolveOwnerDisplayName(botSettings.owner || global.owner?.[0] || '')
         const banner = botSettings.banner || global.botLogo || './ZK.png'
-        const users = Object.keys(global.db?.data?.users || {}).length
+        const usersCount = Object.keys(global.db?.data?.users || {}).length
         const device = getDevice(m.key?.id || '')
         const senderMention = `@${m.sender.split('@')[0]}`
         const dateText = moment.tz('America/Sao_Paulo').format('DD/MM/YYYY')
         const timeText = moment.tz('America/Sao_Paulo').format('HH:mm')
         const uptime = client.uptime ? formatMs(Date.now() - client.uptime) : 'Desconhecido'
 
-        if (rawCategory && !resolvedCategory) {
-          return m.reply(
-            `Categoria *${rawCategory}* nao encontrada.\n\nCategorias disponiveis:\n${buildCategoryList(availableCategories, categoryCounts)}\n\nExemplo: ${usedPrefix}menu stickers`
-          )
-        }
-
-        const header = getMenuHeader({
-          botname,
-          owner,
-          senderMention,
-          users,
-          uptime,
-          device,
-          dateText,
-          timeText
-        })
-
         let text = ''
         if (!resolvedCategory) {
-          text = [
-            header,
-            '',
-            '*CATEGORIAS*',
-            buildCategoryList(availableCategories, categoryCounts),
-            '',
-            `Use *${usedPrefix}menu categoria* para listar os comandos.`,
-            `Exemplo: *${usedPrefix}menu stickers*`
-          ].join('\n')
+          text = bodyMenu
+            .replace(/\$sender/g, senderMention)
+            .replace(/\$device/g, device)
+            .replace(/\$users/g, usersCount.toLocaleString('pt-BR'))
+            .replace(/\$uptime/g, uptime)
+            .replace(/\$tiempo/g, dateText)
+            .replace(/\$tempo/g, timeText)
+            .replace(/\$prefix/g, usedPrefix)
         } else {
-          const cmds = Array.from(commandMap.get(resolvedCategory) || []).sort((a, b) => a.localeCompare(b))
-          const chunks = chunkCommands(cmds)
-          const cmdLines = chunks
-            .map((chunk) => chunk.map((c) => `${usedPrefix}${c}`).join('  '))
-            .join('\n')
+          text = menuObject[resolvedCategory] || ''
+          text = text.replace(/\$prefix/g, usedPrefix)
+        }
 
-          text = [
-            header,
-            '',
-            `*CATEGORIA: ${categoryLabel[resolvedCategory] || resolvedCategory}*`,
-            `Total de comandos: ${cmds.length}`,
-            '',
-            cmdLines || '(sem comandos)',
-            '',
-            `Voltar: *${usedPrefix}menu*`
-          ].join('\n')
+        if (!text && rawCategory) {
+          return m.reply(`Categoria *${rawCategory}* não encontrada. Use ${usedPrefix}menu para ver as opções.`)
         }
 
         payload = { text, banner }
@@ -270,6 +148,20 @@ export default {
       await m.reply(`Erro ao executar o comando *${usedPrefix + command}*.\n\nDetalhes: ${e.message}`)
     }
   }
+}
+
+function formatMs(ms) {
+  const seconds = Math.floor(ms / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+
+  return [
+    days ? `${days}d` : null,
+    `${hours % 24}h`,
+    `${minutes % 60}m`,
+    `${seconds % 60}s`
+  ].filter(Boolean).join(' ')
 }
 
 function formatMs(ms) {
