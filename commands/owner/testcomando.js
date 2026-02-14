@@ -4,6 +4,7 @@ import os from 'os'
 import { fetchNsfwMedia } from '../../lib/mediaFetcher.js'
 import { getHeavyTaskStats } from '../../lib/system/heavyTaskManager.js'
 import { getFfmpegQueueStats, runFfmpeg } from '../../lib/system/ffmpeg.js'
+import { COMPRESS_THRESHOLD, MAX_WA_VIDEO_BYTES, transcodeForWhatsapp } from '../../lib/nsfwShared.js'
 
 function clampInt(value, min, max, fallback) {
   const parsed = Number(value)
@@ -39,6 +40,7 @@ function parseInput(args = []) {
     query: 'ass',
     redMode: 'video', // video | gif | both
     timeoutMs: 90000,
+    reencode: true,
   }
 
   const PRESETS = {
@@ -51,6 +53,7 @@ function parseInput(args = []) {
       query: 'ass',
       redMode: 'video',
       timeoutMs: 90000,
+      reencode: true,
     },
     extremo: {
       preset: 'extremo',
@@ -61,6 +64,7 @@ function parseInput(args = []) {
       query: 'ass',
       redMode: 'both',
       timeoutMs: 120000,
+      reencode: true,
     },
   }
 
@@ -100,6 +104,14 @@ function parseInput(args = []) {
     }
     if (lower.startsWith('-q=')) {
       cfg.query = token.slice(3).trim() || cfg.query
+      continue
+    }
+    if (lower === '-noreencode') {
+      cfg.reencode = false
+      continue
+    }
+    if (lower === '-reencode') {
+      cfg.reencode = true
       continue
     }
 
@@ -216,7 +228,7 @@ async function runStickerLikeJob(jobId, durationSec, timeoutMs) {
   }
 }
 
-async function runRedLikeJob(jobId, query, mode, timeoutMs) {
+async function runRedLikeJob(jobId, query, mode, timeoutMs, reencode = true) {
   const startedAt = Date.now()
   const effectiveMode = resolveEffectiveRedMode(mode)
   const allowedMediaTypes = allowedMediaTypesForMode(effectiveMode)
@@ -237,14 +249,88 @@ async function runRedLikeJob(jobId, query, mode, timeoutMs) {
       timeoutMs,
     )
 
+    if (!media) {
+      return {
+        ok: false,
+        kind: 'red',
+        elapsedMs: Date.now() - startedAt,
+        mediaType: 'none',
+        sizeBytes: 0,
+        sizeBytesOriginal: 0,
+        sizeBytesFinal: 0,
+        transcodeMs: 0,
+        reencoded: false,
+        timeout: false,
+        error: 'empty',
+      }
+    }
+
+    let sizeBytesOriginal = media?.size || (Buffer.isBuffer(media?.buffer) ? media.buffer.length : 0)
+    let sizeBytesFinal = sizeBytesOriginal
+    let transcodeMs = 0
+    let reencoded = false
+
+    if (reencode && Buffer.isBuffer(media?.buffer) && media.buffer.length > 0) {
+      const transcodeStart = Date.now()
+      try {
+        let normalized = await withTimeout(
+          () =>
+            transcodeForWhatsapp(
+              media.buffer,
+              media.buffer.length > COMPRESS_THRESHOLD
+                ? { preset: 'veryfast', crf: 27, maxBitrate: 800, timeoutMs: 150000, limitSeconds: 15 }
+                : { preset: 'fast', crf: 24, maxBitrate: 1000, timeoutMs: 120000, limitSeconds: 15 },
+            ),
+          timeoutMs + 60000,
+        )
+
+        if (normalized.length > MAX_WA_VIDEO_BYTES) {
+          normalized = await withTimeout(
+            () =>
+              transcodeForWhatsapp(normalized, {
+                preset: 'ultrafast',
+                crf: 30,
+                maxBitrate: 450,
+                scale: '640:-2',
+                timeoutMs: 180000,
+                limitSeconds: 12,
+              }),
+            timeoutMs + 90000,
+          )
+        }
+
+        sizeBytesFinal = normalized.length
+        transcodeMs = Date.now() - transcodeStart
+        reencoded = true
+      } catch (error) {
+        return {
+          ok: false,
+          kind: 'red',
+          elapsedMs: Date.now() - startedAt,
+          mediaType: media?.mediaType || 'video',
+          sizeBytes: 0,
+          sizeBytesOriginal,
+          sizeBytesFinal: 0,
+          transcodeMs: Date.now() - transcodeStart,
+          reencoded: false,
+          timeout: error?.code === 'BENCH_TIMEOUT' || error?.code === 'FFMPEG_TIMEOUT',
+          error: `reencode: ${error?.message || String(error)}`,
+        }
+      }
+    }
+
     return {
-      ok: Boolean(media),
+      ok: true,
       kind: 'red',
       elapsedMs: Date.now() - startedAt,
       mediaType: media?.mediaType || 'none',
-      sizeBytes: media?.size || 0,
+      sizeBytes: sizeBytesFinal,
+      sizeBytesOriginal,
+      sizeBytesFinal,
+      transcodeMs,
+      reencoded,
       timeout: false,
-      error: media ? null : 'empty',
+      error: null,
     }
   } catch (error) {
     return {
@@ -303,8 +389,12 @@ function kindLine(kind = 'unknown', items = []) {
   const elapsed = items.map((r) => r.elapsedMs || 0)
   const avg = elapsed.length ? elapsed.reduce((a, b) => a + b, 0) / elapsed.length : 0
   const p95 = percentile(elapsed, 95)
-  const size = items.reduce((acc, item) => acc + (item.sizeBytes || 0), 0)
-  return `${kind}: total=${total} ok=${ok} fail=${fail} avg=${avg.toFixed(0)}ms p95=${p95.toFixed(0)}ms out=${mb(size)}`
+  const size = items.reduce((acc, item) => acc + (item.sizeBytesFinal || item.sizeBytes || 0), 0)
+  const reencoded = items.filter((item) => item.reencoded).length
+  const transcodeList = items.map((item) => Number(item.transcodeMs || 0)).filter((n) => n > 0)
+  const transcodeAvg = transcodeList.length ? transcodeList.reduce((a, b) => a + b, 0) / transcodeList.length : 0
+  const transcodeP95 = transcodeList.length ? percentile(transcodeList, 95) : 0
+  return `${kind}: total=${total} ok=${ok} fail=${fail} avg=${avg.toFixed(0)}ms p95=${p95.toFixed(0)}ms out=${mb(size)} reencode=${reencoded}/${total} tcAvg=${transcodeAvg.toFixed(0)}ms tcP95=${transcodeP95.toFixed(0)}ms`
 }
 
 export default {
@@ -322,7 +412,7 @@ export default {
     await m.react('\u23F3').catch(() => {})
     await client.reply(
       m.chat,
-      `Bench iniciado...\nperfil=${cfg.profile} users=${cfg.users} rounds=${cfg.rounds} redMode=${cfg.redMode} (efetivo=${redModeEffective}) query="${cfg.query}"`,
+      `Bench iniciado...\nperfil=${cfg.profile} users=${cfg.users} rounds=${cfg.rounds} redMode=${cfg.redMode} (efetivo=${redModeEffective}) reencode=${cfg.reencode ? 'on' : 'off'} query="${cfg.query}"`,
       m,
     )
 
@@ -346,7 +436,7 @@ export default {
           if (jobKind === 'sticker') {
             wave.push(runStickerLikeJob(jobId, cfg.durationSec, cfg.timeoutMs))
           } else {
-            wave.push(runRedLikeJob(jobId, cfg.query, redModeEffective, cfg.timeoutMs))
+            wave.push(runRedLikeJob(jobId, cfg.query, redModeEffective, cfg.timeoutMs, cfg.reencode))
           }
         }
 
@@ -375,6 +465,7 @@ export default {
       `preset=${cfg.preset}`,
       `perfil=${cfg.profile} users=${cfg.users} rounds=${cfg.rounds} totalJobs=${summary.total}`,
       `redMode solicitado=${cfg.redMode} efetivo=${redModeEffective}`,
+      `reencode=${cfg.reencode ? 'on' : 'off'}`,
       `query="${cfg.query}"`,
       '',
       '[resultado geral]',
@@ -402,7 +493,7 @@ export default {
       '2) Para sticker sob carga: .s -lite e video <= 6s',
       '3) Em pico: manter ffmpeg concorrencia=1',
       '',
-      `uso: ${usedPrefix}testcomando [rapido|extremo|mix|sticker|red] [termo] [-users=4] [-rounds=1] [-dur=3] [-mode=video|gif|both]`,
+      `uso: ${usedPrefix}testcomando [rapido|extremo|mix|sticker|red] [termo] [-users=4] [-rounds=1] [-dur=3] [-mode=video|gif|both] [-noreencode]`,
     ]
 
     await client.reply(m.chat, lines.join('\n'), m)
