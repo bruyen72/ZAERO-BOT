@@ -12,6 +12,7 @@ import level from './commands/level.js';
 import { getGroupAdmins } from './lib/message.js';
 import { getCachedGroupMetadata } from './lib/cache.js';
 import { ChatTaskQueue } from './lib/system/taskQueue.js';
+import { sendUnknownCommandFeedback } from './lib/system/unknownCommandReply.js';
 import {
   executeCommandTask,
   getCommandTimeoutMs,
@@ -262,7 +263,8 @@ async function processMessage(client, m) {
   if (!cmdData) {
     // Se digitou o ponto mas o comando não existe
     if (usedPrefix === '.') {
-      return m.reply(`ꕤ O comando *${command}* não existe.\n✎ Use *${usedPrefix}menu* para ver a lista de comandos.`)
+      await sendUnknownCommandFeedback(client, m, { command, usedPrefix }).catch(() => {})
+      return
     }
     return
   }

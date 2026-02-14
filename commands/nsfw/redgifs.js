@@ -16,6 +16,30 @@ import {
 const SEARCH_MAX_ATTEMPTS = 4
 const FETCH_TIMEOUT_MS = 30000
 
+const REDGIFS_DEFAULT_SAFETY_EXCLUDED_TERMS = Object.freeze([
+  'gore',
+  'snuff',
+  'blood',
+  'death',
+  'corpse',
+  'scat',
+  'feces',
+  'poop',
+  'urine',
+  'piss',
+  'vomit',
+  'puke',
+  'bestiality',
+  'zoophilia',
+  'animal-sex',
+  'incest',
+  'rape',
+  'raped',
+  'forced',
+  'underage',
+  'cp',
+])
+
 const MEDIA_MODE_ALIASES = Object.freeze({
   video: 'video',
   v: 'video',
@@ -37,6 +61,69 @@ function normalizeText(value = '') {
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim()
+}
+
+function normalizeSafetyTerm(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function parseEnvBool(value, fallback = true) {
+  const normalized = normalizeText(value)
+  if (!normalized) return fallback
+  if (['1', 'true', 'on', 'yes', 'y'].includes(normalized)) return true
+  if (['0', 'false', 'off', 'no', 'n'].includes(normalized)) return false
+  return fallback
+}
+
+function parseCsvTerms(value = '') {
+  return [...new Set(
+    String(value || '')
+      .split(/[,;|\n]+/)
+      .map((item) => normalizeSafetyTerm(item))
+      .filter(Boolean),
+  )]
+}
+
+function getSafetyBlockedTerms() {
+  const enabled = parseEnvBool(process.env.REDGIFS_SAFETY_FILTER, true)
+  if (!enabled) return []
+
+  const includeDefault = parseEnvBool(process.env.REDGIFS_DEFAULT_SAFETY_FILTER, true)
+  const envTerms = parseCsvTerms(process.env.REDGIFS_SAFETY_EXCLUDED_TERMS || '')
+
+  return [...new Set([
+    ...(includeDefault ? REDGIFS_DEFAULT_SAFETY_EXCLUDED_TERMS : []),
+    ...envTerms,
+  ].map((item) => normalizeSafetyTerm(item)).filter(Boolean))]
+}
+
+function checkSafetyBlocked(media = {}) {
+  const blockedTerms = getSafetyBlockedTerms()
+  if (blockedTerms.length === 0) return { blocked: false, hit: '' }
+
+  const sourceText = [
+    ...(Array.isArray(media?.tags) ? media.tags : []),
+    media?.title || '',
+    media?.pageUrl || '',
+    media?.url || '',
+  ].join(' ')
+
+  const normalized = normalizeSafetyTerm(sourceText)
+  if (!normalized) return { blocked: false, hit: '' }
+
+  for (const term of blockedTerms) {
+    if (!term) continue
+    if (normalized.includes(term)) {
+      return { blocked: true, hit: term }
+    }
+  }
+
+  return { blocked: false, hit: '' }
 }
 
 function isLikelyRedgifsId(value = '') {
@@ -356,6 +443,7 @@ async function resolveDirectInput(input, options = {}) {
     title: parsed?.title || 'RedGifs',
     duration: parsed?.duration || null,
     pageUrl: parsed?.pageUrl || input,
+    tags: Array.isArray(parsed?.tags) ? parsed.tags : [],
     url: best.url,
     buffer: mediaBuffer || null,
   }
@@ -422,6 +510,11 @@ export default {
       if (isRedgifsUrl(queryInput)) {
         await withChatNsfwQueue(m.chat, async () => {
           const mediaResult = await resolveDirectInput(queryInput, { preferredMediaType })
+          const safetyCheck = checkSafetyBlocked(mediaResult)
+          if (safetyCheck.blocked) {
+            await m.react('\u26D4')
+            return m.reply(`Conteudo bloqueado pelo filtro de seguranca (${safetyCheck.hit}).`)
+          }
           const caption = buildCaption(mediaResult, mediaResult.pageUrl || queryInput)
           const sent = await sendResultProcessed(client, m, mediaResult, caption, command)
 
@@ -458,6 +551,12 @@ export default {
           const currentId = normalizeId(mediaResult.id || '')
           if (currentId && attemptedIds.has(currentId)) continue
           if (currentId) attemptedIds.add(currentId)
+
+          const safetyCheck = checkSafetyBlocked(mediaResult)
+          if (safetyCheck.blocked) {
+            console.log(`[RedGifs] ${command}: item bloqueado por seguranca (${safetyCheck.hit}) id=${currentId || 'sem-id'}`)
+            continue
+          }
 
           const caption = buildCaption(mediaResult, mediaResult.pageUrl || mediaResult.url || queryInput)
 
