@@ -24,7 +24,7 @@ console.log(chalk.green(`[ ✿ ] ${global.comandos.size} Comandos carregados com
 
 const recentMenuRequests = new Map();
 const recentMessageIds = new Map();
-// ? Reduzido para 3 segundos para permitir respostas mais r�pidas
+// ? Reduzido para 3 segundos para permitir respostas mais r�pidas
 const MENU_DEDUP_WINDOW_MS = 3000;
 const MESSAGE_DEDUP_WINDOW_MS = 10000;
 
@@ -133,18 +133,23 @@ async function processMessage(client, m) {
   // 2. Prefixo FIXO e ESTRITO: apenas "." (ponto)
   const PREFIX = '.'
 
+  // TAREFA: Compatibilidade Universal (Desktop/iPhone)
+  const rawText = m.text || m.body || m.msg?.text || m.msg?.caption || 
+                  m.message?.conversation || m.message?.extendedTextMessage?.text || '';
+  const fullText = typeof rawText === 'string' ? rawText.trim() : '';
+
   // Validação estrita do prefixo
   let command = '', args = [], text = '', usedPrefix = ''
 
-  if (m.text && m.text.startsWith(PREFIX)) {
+  if (fullText.startsWith(PREFIX)) {
     // Verificar se após o "." não tem espaço (". menu" é inválido)
-    if (m.text.length > 1 && m.text[1] === ' ') {
+    if (fullText.length > 1 && fullText[1] === ' ') {
       // ". menu" (ponto + espaço) → IGNORAR completamente
       return
     }
 
     // Extrai o comando SEM o prefixo
-    const content = m.text.slice(PREFIX.length).trim()
+    const content = fullText.slice(PREFIX.length).trim()
 
     if (content) {
       usedPrefix = PREFIX

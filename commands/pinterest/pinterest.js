@@ -1,79 +1,93 @@
 import { fetchPinterestImages } from './index.js'
 
 export default {
-  command: ['pinterest', 'pin'],
-  category: 'search',
+  command: ['pin', 'pinterest'],
+  category: 'downloads',
   run: async (client, m, args, usedPrefix, command) => {
-    let maxImages = 5
-    let query = args.join(' ').trim()
+    let quantity = 1 // Padrão
+    let query = ''
 
-    // Verifica se o primeiro argumento e um numero para definir a quantidade
-    if (args.length > 1 && !isNaN(args[0])) {
-      maxImages = parseInt(args[0])
-      if (maxImages > 12) maxImages = 12 // Limite maximo do crawler
-      if (maxImages < 1) maxImages = 1
-      query = args.slice(1).join(' ').trim()
+    if (args.length > 0) {
+      // Detecta se o primeiro argumento é a quantidade
+      const firstArg = args[0]
+      const isNum = /^\d+$/.test(firstArg)
+      
+      if (isNum) {
+        quantity = parseInt(firstArg)
+        query = args.slice(1).join(' ').trim()
+      } else {
+        query = args.join(' ').trim()
+      }
     }
+
+    // Limite rigoroso de 1 a 7 fotos
+    if (quantity > 7) quantity = 7
+    if (quantity < 1) quantity = 1
 
     if (!query) {
       return m.reply(
-        `《✧》 Use: ${usedPrefix}${command} [quantidade] <termo|link>
-` +
-        `Exemplo 1: ${usedPrefix}${command} 2 anime casal
-` +
-        `Exemplo 2: ${usedPrefix}${command} naruto
-` +
-        `Exemplo 3: ${usedPrefix}${command} https://br.pinterest.com/pin/99360735500167749/`
+        `╔═══『 📌 AJUDA PINTEREST 』═══╗\n` +
+        `║\n` +
+        `║ 💡 *Como usar:* \n` +
+        `║ > *.pin <quantidade> <termo>*\n` +
+        `║\n` +
+        `║ 📝 *Exemplos:* \n` +
+        `║ ✦ .pin anime\n` +
+        `║ ✦ .pin 2 luffy\n` +
+        `║ ✦ .pin 5 wallpaper pc\n` +
+        `║\n` +
+        `║ ⚠️ *Limite:* Máximo 7 fotos.\n` +
+        `╚════════════════════════╝`
       )
     }
 
-    // O crawler ja lida com links internamente via normalizeQueryOrUrl
     try {
-      m.react('\u23F3').catch(() => {})
+      await m.react('⏳').catch(() => {})
 
+      // Chama o crawler robusto
       const result = await fetchPinterestImages({
         queryOrUrl: query,
-        maxImages: maxImages,
-        maxPages: 5,
+        maxImages: quantity,
+        maxPages: 3,
         requireAuth: String(process.env.PINTEREST_REQUIRE_AUTH || '').trim() === '1'
       })
 
-      if (!result?.images?.length) {
-        return m.reply(`《✧》 Nenhum resultado encontrado para: ${query}`)
+      // Corta o excesso para respeitar a quantidade
+      const finalImages = (result?.images || []).slice(0, quantity)
+
+      if (!finalImages.length) {
+        await m.react('❌').catch(() => {})
+        return m.reply(`《✧》 Nenhum resultado encontrado para: "${query}"`)
       }
 
-      const medias = result.images.slice(0, maxImages).map((item, index, source) => {
+      const totalImages = finalImages.length
+      const medias = finalImages.map((item, index) => {
         return {
           type: 'image',
           data: { url: item.url },
-          caption: `╔═══『 📌 PINTEREST 』═══╗
-` +
-            `║
-` +
-            `║ 🔍 *Busca:* ${query}
-` +
-            `║ 📸 *Item:* ${index + 1}/${source.length}
-` +
-            `║
-` +
-            `╚═══『 ✧ ZÆRØ BOT ✧ 』═══╝`
+          caption: `╔═══『 📌 PINTEREST 』═══╗\n` +
+                   `║\n` +
+                   `║ 🔍 *Busca:* ${query}\n` +
+                   `║ 📸 *Item:* ${index + 1}/${totalImages}\n` +
+                   `║\n` +
+                   `╚═══『 ✧ ZÆRØ BOT ✧ 』═══╝`
         }
       })
 
+      // Envio otimizado (álbum ou sequencial)
       if (medias.length === 1 || typeof client.sendAlbumMessage !== 'function') {
-        await client.sendMessage(
-          m.chat,
-          {
-            image: { url: medias[0].data.url },
-            caption: medias[0].caption
-          },
-          { quoted: m }
-        )
+        for (const media of medias) {
+          await client.sendMessage(m.chat, { image: { url: media.data.url }, caption: media.caption }, { quoted: m })
+        }
       } else {
         await client.sendAlbumMessage(m.chat, medias, { quoted: m })
       }
+
+      await m.react('✅').catch(() => {})
     } catch (error) {
-      await m.reply(`> Erro ao executar ${usedPrefix}${command}: ${error?.message || 'falha inesperada'}`)
+      await m.react('❌').catch(() => {})
+      console.error(`[Pinterest Error]`, error)
+      await m.reply(`> ❌ *Erro ao buscar:* ${error?.message || 'falha inesperada'}`)
     }
   }
 }
