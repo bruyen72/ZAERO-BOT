@@ -58,10 +58,17 @@ export default {
       const author = marca.length > 1 ? marca[1] : texto2
       const mode = flags.hd ? 'hd' : 'lite'
 
+      const replyProcessing = async (text = '') => {
+        await m.react('\u23F3').catch(() => {})
+        if (text) {
+          await client.reply(m.chat, text, m).catch(() => {})
+        }
+      }
+
       // Mensagem de sucesso ao final (opcional, conforme pedido)
       const sendSuccess = async () => {
-         // await client.sendMessage(m.chat, { text: DARK_MSG.success }, { quoted: m }).catch(() => {})
-         await m.react('🔥').catch(() => {})
+          // await client.sendMessage(m.chat, { text: DARK_MSG.success }, { quoted: m }).catch(() => {})
+          await m.react('🔥').catch(() => {})
       }
 
       // --- A) DOWNLOAD POR STREAMING (Anti-OOM) ---
