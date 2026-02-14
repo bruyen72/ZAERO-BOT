@@ -8,6 +8,7 @@ import { COMPRESS_THRESHOLD, MAX_WA_VIDEO_BYTES, transcodeForWhatsapp } from '..
 
 const BENCH_LOCK_TTL_MS = 20 * 60 * 1000
 const BENCH_REENCODE_MAX_SOURCE_BYTES = 25 * 1024 * 1024
+const BENCH_NO_REENCODE_MAX_SOURCE_BYTES = 18 * 1024 * 1024
 let activeBenchRun = null
 
 function clampInt(value, min, max, fallback) {
@@ -34,6 +35,37 @@ function percentile(list = [], p = 95) {
   return sorted[index]
 }
 
+async function runWithConcurrency(taskFns = [], limit = 2) {
+  const list = Array.isArray(taskFns) ? taskFns : []
+  const max = Math.max(1, Math.min(4, Number(limit || 2)))
+  const results = new Array(list.length)
+  let cursor = 0
+
+  async function worker() {
+    while (true) {
+      const index = cursor
+      cursor += 1
+      if (index >= list.length) return
+      try {
+        results[index] = await list[index]()
+      } catch (error) {
+        results[index] = {
+          ok: false,
+          kind: 'unknown',
+          elapsedMs: 0,
+          sizeBytes: 0,
+          timeout: isTimeoutLike(error),
+          error: error?.message || String(error),
+        }
+      }
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(max, list.length) }, () => worker())
+  await Promise.all(workers)
+  return results
+}
+
 function isTimeoutLike(error) {
   const code = String(error?.code || '')
   if (code === 'BENCH_TIMEOUT' || code === 'FFMPEG_TIMEOUT' || code === 'FFMPEG_QUEUE_TIMEOUT') return true
@@ -46,6 +78,7 @@ function parseInput(args = []) {
     profile: 'mix', // mix | sticker | red
     users: 4,
     rounds: 1,
+    waveConcurrency: 2,
     durationSec: 3,
     query: 'ass',
     redMode: 'video', // video | gif | both
@@ -64,12 +97,14 @@ function parseInput(args = []) {
       redMode: 'video',
       timeoutMs: 45000,
       reencode: true,
+      waveConcurrency: 2,
     },
     extremo: {
       preset: 'extremo',
       profile: 'mix',
       users: 4,
       rounds: 2,
+      waveConcurrency: 2,
       durationSec: 3,
       query: 'ass',
       redMode: 'both',
@@ -112,6 +147,10 @@ function parseInput(args = []) {
     }
     if (lower.startsWith('-timeout=')) {
       cfg.timeoutMs = clampInt(lower.slice(9), 10000, 120000, cfg.timeoutMs)
+      continue
+    }
+    if (lower.startsWith('-wc=')) {
+      cfg.waveConcurrency = clampInt(lower.slice(4), 1, 4, cfg.waveConcurrency)
       continue
     }
     if (lower.startsWith('-q=')) {
@@ -199,7 +238,7 @@ async function runStickerLikeJob(jobId, durationSec, timeoutMs) {
     '-f',
     'lavfi',
     '-i',
-    'testsrc=size=720x720:rate=24',
+    'testsrc=size=512x512:rate=24',
     '-t',
     String(durationSec),
     '-vf',
@@ -252,10 +291,10 @@ async function runRedLikeJob(jobId, query, mode, timeoutMs, reencode = true) {
   const startedAt = Date.now()
   const effectiveMode = resolveEffectiveRedMode(mode)
   const allowedMediaTypes = allowedMediaTypesForMode(effectiveMode)
-  const maxCandidateBytes = reencode ? BENCH_REENCODE_MAX_SOURCE_BYTES : 0
+  const maxCandidateBytes = reencode ? BENCH_REENCODE_MAX_SOURCE_BYTES : BENCH_NO_REENCODE_MAX_SOURCE_BYTES
 
   try {
-    const fetchTimeoutMs = Math.max(15000, Math.min(timeoutMs, 60000))
+    const fetchTimeoutMs = Math.max(12000, Math.min(timeoutMs, 30000))
     const media = await withTimeout(
       () =>
         fetchNsfwMedia(query, null, {
@@ -263,8 +302,8 @@ async function runRedLikeJob(jobId, query, mode, timeoutMs, reencode = true) {
           source: 'redgifs',
           allowStaticFallback: false,
           uniqueIds: true,
-          maxPages: 2,
-          perPage: 30,
+          maxPages: 1,
+          perPage: 18,
           nicheOverride: query,
           strictQuery: true,
           maxCandidateBytes,
@@ -296,8 +335,8 @@ async function runRedLikeJob(jobId, query, mode, timeoutMs, reencode = true) {
     if (reencode && Buffer.isBuffer(media?.buffer) && media.buffer.length > 0) {
       const transcodeStart = Date.now()
       try {
-        const primaryTcTimeout = Math.max(15000, Math.min(timeoutMs, 30000))
-        const primaryTcQueueWait = Math.max(10000, Math.min(primaryTcTimeout, 25000))
+        const primaryTcTimeout = Math.max(12000, Math.min(timeoutMs, 22000))
+        const primaryTcQueueWait = Math.max(8000, Math.min(primaryTcTimeout, 15000))
         let normalized = await withTimeout(
           () =>
             transcodeForWhatsapp(
@@ -309,7 +348,7 @@ async function runRedLikeJob(jobId, query, mode, timeoutMs, reencode = true) {
                     maxBitrate: 800,
                     timeoutMs: primaryTcTimeout,
                     queueWaitTimeoutMs: primaryTcQueueWait,
-                    limitSeconds: 12,
+                    limitSeconds: 10,
                   }
                 : {
                     preset: 'fast',
@@ -317,10 +356,10 @@ async function runRedLikeJob(jobId, query, mode, timeoutMs, reencode = true) {
                     maxBitrate: 1000,
                     timeoutMs: primaryTcTimeout,
                     queueWaitTimeoutMs: primaryTcQueueWait,
-                    limitSeconds: 12,
+                    limitSeconds: 10,
                   },
             ),
-          primaryTcTimeout + 5000,
+          primaryTcTimeout + 3000,
         )
 
         if (normalized.length > MAX_WA_VIDEO_BYTES) {
@@ -479,7 +518,7 @@ export default {
       await m.react('\u23F3').catch(() => {})
       await client.reply(
         m.chat,
-        `Bench iniciado...\nperfil=${cfg.profile} users=${cfg.users} rounds=${cfg.rounds} redMode=${cfg.redMode} (efetivo=${redModeEffective}) reencode=${cfg.reencode ? 'on' : 'off'} query="${cfg.query}"`,
+        `Bench iniciado...\nperfil=${cfg.profile} users=${cfg.users} rounds=${cfg.rounds} redMode=${cfg.redMode} (efetivo=${redModeEffective}) reencode=${cfg.reencode ? 'on' : 'off'} wc=${cfg.waveConcurrency} query="${cfg.query}"`,
         m,
       )
 
@@ -487,6 +526,7 @@ export default {
       const results = []
       let ffPeakActive = ffBefore.active
       let ffPeakWaiting = ffBefore.waiting
+      let redGate = Promise.resolve()
       const monitor = setInterval(() => {
         const stats = getFfmpegQueueStats()
         ffPeakActive = Math.max(ffPeakActive, stats.active)
@@ -495,19 +535,24 @@ export default {
 
       try {
         for (let round = 1; round <= cfg.rounds; round += 1) {
-          const wave = []
+          const waveTasks = []
           for (let user = 1; user <= cfg.users; user += 1) {
             const jobKind = pickJobKind(cfg.profile, user, round)
             const jobId = `r${round}u${user}`
 
             if (jobKind === 'sticker') {
-              wave.push(runStickerLikeJob(jobId, cfg.durationSec, cfg.timeoutMs))
+              waveTasks.push(() => runStickerLikeJob(jobId, cfg.durationSec, cfg.timeoutMs))
             } else {
-              wave.push(runRedLikeJob(jobId, cfg.query, redModeEffective, cfg.timeoutMs, cfg.reencode))
+              waveTasks.push(async () => {
+                const run = () => runRedLikeJob(jobId, cfg.query, redModeEffective, cfg.timeoutMs, cfg.reencode)
+                const current = redGate.then(run, run)
+                redGate = current.catch(() => {})
+                return current
+              })
             }
           }
 
-          const settled = await Promise.all(wave)
+          const settled = await runWithConcurrency(waveTasks, cfg.waveConcurrency)
           results.push(...settled)
         }
       } finally {
@@ -533,6 +578,7 @@ export default {
         `perfil=${cfg.profile} users=${cfg.users} rounds=${cfg.rounds} totalJobs=${summary.total}`,
         `redMode solicitado=${cfg.redMode} efetivo=${redModeEffective}`,
         `reencode=${cfg.reencode ? 'on' : 'off'}`,
+        `waveConcurrency=${cfg.waveConcurrency}`,
         `query="${cfg.query}"`,
         '',
         '[resultado geral]',
@@ -560,7 +606,7 @@ export default {
         '2) Para sticker sob carga: .s -lite e video <= 6s',
         '3) Em pico: manter ffmpeg concorrencia=1',
         '',
-        `uso: ${usedPrefix}testcomando [rapido|extremo|mix|sticker|red] [termo] [-users=4] [-rounds=1] [-dur=3] [-mode=video|gif|both] [-noreencode]`,
+        `uso: ${usedPrefix}testcomando [rapido|extremo|mix|sticker|red] [termo] [-users=4] [-rounds=1] [-dur=3] [-mode=video|gif|both] [-wc=2] [-noreencode]`,
       ]
 
       await client.reply(m.chat, lines.join('\n'), m)

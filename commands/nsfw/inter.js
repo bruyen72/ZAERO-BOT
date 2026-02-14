@@ -50,7 +50,7 @@ const alias = {
   cum: ['cum', 'gozar'],
   undress: ['undress', 'encuerar', 'tirarroupa', 'pelada', 'pelado'],
   fuck: ['fuck', 'coger', 'foder', 'transar', 'trepar'],
-  spank: ['spank', 'nalgada', 'bater', 'tapa', 'palmada', 'baternabunda'],
+  spank: ['spank', 'nalgada', 'bater', 'baternabunda'],
   lickpussy: ['lickpussy', 'lamberbuceta', 'chuparbuceta'],
   fap: ['fap', 'paja', 'punheta', 'bronha'],
   grope: ['grope', 'apalpar'],
