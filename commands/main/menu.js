@@ -1,7 +1,6 @@
 import fs from 'fs'
 import moment from 'moment-timezone'
 import { getDevice } from '@whiskeysockets/baileys'
-import { bodyMenu, menuObject } from '../../lib/commands.js'
 import { apiCache } from '../../lib/cache.js'
 
 function normalize(text = '') {
@@ -13,7 +12,7 @@ function normalize(text = '') {
 }
 
 function normalizeBotDisplayName(name = '') {
-  const fallback = 'ZARO BOT'
+  const fallback = 'ZAERO BOT'
   const clean = String(name || '').trim()
   if (!clean) return fallback
   const legacyNames = new Set(['yuki', 'yuki suou', 'alya', 'alya san'])
@@ -35,15 +34,13 @@ function resolveOwnerDisplayName(owner = '') {
 const categoryAlias = {
   ai: ['ai', 'ia', 'chatgpt'],
   anime: ['anime', 'animes'],
-  download: ['download', 'apk'],
-  downloader: ['downloader', 'downloads', 'baixar', 'midia'],
+  downloads: ['download', 'downloads', 'downloader', 'baixar', 'midia', 'apk', 'redes', 'social'],
   economy: ['economy', 'economia'],
   fun: ['fun', 'diversao'],
   gacha: ['gacha'],
   github: ['github', 'git'],
-  group: ['group'],
-  grupo: ['grupo', 'grupos'],
-  info: ['info', 'informacoes'],
+  grupo: ['group', 'grupo', 'grupos'],
+  info: ['info', 'informacoes', 'menu', 'ajuda', 'comandos'],
   internet: ['internet'],
   mod: ['mod', 'moderacao'],
   nsfw: ['nsfw', '18'],
@@ -52,29 +49,102 @@ const categoryAlias = {
   rpg: ['rpg'],
   search: ['search', 'pesquisa', 'buscar'],
   socket: ['socket', 'sockets', 'bot', 'bots'],
-  sticker: ['sticker', 'stickers'],
+  stickers: ['sticker', 'stickers'],
   tools: ['tools', 'ferramentas'],
   uncategorized: ['uncategorized', 'outros'],
   utils: ['utils', 'utilitarios']
 }
 
-function resolveCategory(input = '') {
+const categoryLabel = {
+  ai: 'IA',
+  anime: 'Anime',
+  downloads: 'Downloads',
+  economy: 'Economia',
+  fun: 'Diversao',
+  gacha: 'Gacha',
+  github: 'GitHub',
+  grupo: 'Grupo',
+  info: 'Info',
+  internet: 'Internet',
+  mod: 'Moderacao',
+  nsfw: 'NSFW',
+  owner: 'Dono',
+  profile: 'Perfil',
+  rpg: 'RPG',
+  search: 'Pesquisa',
+  socket: 'Sockets',
+  stickers: 'Stickers',
+  tools: 'Ferramentas',
+  uncategorized: 'Outros',
+  utils: 'Utilitarios'
+}
+
+const categoryRemap = {
+  download: 'downloads',
+  downloader: 'downloads',
+  group: 'grupo',
+  sticker: 'stickers',
+  tool: 'tools'
+}
+
+function canonicalCategory(category = '') {
+  const key = normalize(category)
+  if (!key) return 'uncategorized'
+  return categoryRemap[key] || key
+}
+
+function resolveCategory(input = '', available = []) {
   const key = normalize(input)
   if (!key) return null
 
   for (const [category, aliases] of Object.entries(categoryAlias)) {
-    if (aliases.map(normalize).includes(key)) return category
+    if (aliases.map(normalize).includes(key)) {
+      return available.includes(category) ? category : null
+    }
   }
 
-  if (Object.prototype.hasOwnProperty.call(menuObject, key)) return key
-  return null
+  return available.includes(key) ? key : null
 }
 
-function buildCategoryList() {
-  return Object.keys(menuObject)
+function buildCategoryList(available = [], counts = new Map()) {
+  return available
+    .slice()
     .sort((a, b) => a.localeCompare(b))
-    .map((cat) => `- ${cat}`)
+    .map((cat) => `- ${categoryLabel[cat] || cat} (${counts.get(cat) || 0})`)
     .join('\n')
+}
+
+function chunkCommands(commands = [], size = 18) {
+  const chunks = []
+  for (let i = 0; i < commands.length; i += size) {
+    chunks.push(commands.slice(i, i + size))
+  }
+  return chunks
+}
+
+function buildCommandMap() {
+  const buckets = new Map()
+
+  for (const [cmd, data] of global.comandos.entries()) {
+    const category = canonicalCategory(data?.category || 'uncategorized')
+    if (!buckets.has(category)) buckets.set(category, new Set())
+    buckets.get(category).add(String(cmd).toLowerCase())
+  }
+
+  return buckets
+}
+
+function getMenuHeader({ botname, owner, senderMention, users, uptime, device, dateText, timeText }) {
+  return [
+    '*MENU DE COMANDOS*',
+    `Bot: ${botname}`,
+    `Dono: ${owner}`,
+    `Usuario: ${senderMention}`,
+    `Usuarios: ${users.toLocaleString('pt-BR')}`,
+    `Online: ${uptime}`,
+    `Dispositivo: ${device}`,
+    `Data: ${dateText}  Hora: ${timeText}`
+  ].join('\n')
 }
 
 export default {
@@ -82,8 +152,14 @@ export default {
   category: 'info',
   run: async (client, m, args, usedPrefix, command) => {
     try {
+      const commandMap = buildCommandMap()
+      const availableCategories = Array.from(commandMap.keys()).sort((a, b) => a.localeCompare(b))
+      const categoryCounts = new Map(
+        availableCategories.map((cat) => [cat, (commandMap.get(cat) || new Set()).size])
+      )
+
       const rawCategory = String(args[0] || '').trim()
-      const resolvedCategory = resolveCategory(rawCategory)
+      const resolvedCategory = resolveCategory(rawCategory, availableCategories)
       const cacheKey = `menu_text_${m.sender}_${normalize(rawCategory || 'all')}`
       let payload = apiCache.get(cacheKey)
 
@@ -93,12 +169,8 @@ export default {
         const botname = normalizeBotDisplayName(botSettings.botname || botSettings.namebot || global.botName)
         const owner = resolveOwnerDisplayName(botSettings.owner || global.owner?.[0] || '')
         const banner = botSettings.banner || global.botLogo || './ZK.png'
-        const botType = global.client?.user?.id && botId === (global.client.user.id.split(':')[0] + '@s.whatsapp.net')
-          ? 'Principal'
-          : 'SubBot'
         const users = Object.keys(global.db?.data?.users || {}).length
         const device = getDevice(m.key?.id || '')
-        const senderName = global.db?.data?.users?.[m.sender]?.name || m.pushName || 'Usuário'
         const senderMention = `@${m.sender.split('@')[0]}`
         const dateText = moment.tz('America/Sao_Paulo').format('DD/MM/YYYY')
         const timeText = moment.tz('America/Sao_Paulo').format('HH:mm')
@@ -106,36 +178,49 @@ export default {
 
         if (rawCategory && !resolvedCategory) {
           return m.reply(
-            `A categoria *${rawCategory}* não existe.\n\nCategorias disponíveis:\n${buildCategoryList()}\n\nExemplo: ${usedPrefix}menu downloader`
+            `Categoria *${rawCategory}* nao encontrada.\n\nCategorias disponiveis:\n${buildCategoryList(availableCategories, categoryCounts)}\n\nExemplo: ${usedPrefix}menu stickers`
           )
         }
 
-        const sections = resolvedCategory
-          ? [String(menuObject[resolvedCategory] || '')]
-          : Object.keys(menuObject)
-              .sort((a, b) => a.localeCompare(b))
-              .map((cat) => String(menuObject[cat] || ''))
+        const header = getMenuHeader({
+          botname,
+          owner,
+          senderMention,
+          users,
+          uptime,
+          device,
+          dateText,
+          timeText
+        })
 
-        let text = `${String(bodyMenu || '').trim()}\n\n${sections.join('\n\n')}`.trim()
+        let text = ''
+        if (!resolvedCategory) {
+          text = [
+            header,
+            '',
+            '*CATEGORIAS*',
+            buildCategoryList(availableCategories, categoryCounts),
+            '',
+            `Use *${usedPrefix}menu categoria* para listar os comandos.`,
+            `Exemplo: *${usedPrefix}menu stickers*`
+          ].join('\n')
+        } else {
+          const cmds = Array.from(commandMap.get(resolvedCategory) || []).sort((a, b) => a.localeCompare(b))
+          const chunks = chunkCommands(cmds)
+          const cmdLines = chunks
+            .map((chunk) => chunk.map((c) => `${usedPrefix}${c}`).join('  '))
+            .join('\n')
 
-        const replacements = {
-          '$owner': owner,
-          '$botType': botType,
-          '$device': device,
-          '$tiempo': dateText,
-          '$tempo': timeText,
-          '$users': users.toLocaleString('pt-BR'),
-          '$cat': resolvedCategory ? ` (${resolvedCategory})` : '',
-          '$sender': senderMention,
-          '$senderName': senderName,
-          '$botname': botname,
-          '$namebot': botname,
-          '$prefix': usedPrefix,
-          '$uptime': uptime
-        }
-
-        for (const [token, value] of Object.entries(replacements)) {
-          text = text.split(token).join(String(value))
+          text = [
+            header,
+            '',
+            `*CATEGORIA: ${categoryLabel[resolvedCategory] || resolvedCategory}*`,
+            `Total de comandos: ${cmds.length}`,
+            '',
+            cmdLines || '(sem comandos)',
+            '',
+            `Voltar: *${usedPrefix}menu*`
+          ].join('\n')
         }
 
         payload = { text, banner }

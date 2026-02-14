@@ -32,8 +32,8 @@ const BUSY_NOTICE_WINDOW_MS = 10 * 1000;
 const busyNoticeByChat = new Map();
 
 const chatTaskQueue = new ChatTaskQueue({
-  maxPendingPerChat: Number(process.env.BOT_CHAT_QUEUE_MAX_PENDING || 120),
-  maxPendingGlobal: Number(process.env.BOT_QUEUE_MAX_PENDING || 6000),
+  maxPendingPerChat: Number(process.env.BOT_CHAT_QUEUE_MAX_PENDING || 60),
+  maxPendingGlobal: Number(process.env.BOT_QUEUE_MAX_PENDING || 1500),
   maxConcurrentGlobal: Number(process.env.BOT_QUEUE_MAX_CONCURRENT || 4),
 });
 
@@ -298,6 +298,7 @@ async function processMessage(client, m) {
       () => cmdData.run(client, m, args, usedPrefix, resolvedCommand, text),
       {
         heavy: heavyCommand,
+        chatId: m.chat,
         timeoutMs,
         label: `${resolvedCommand}@${m.chat}`,
       },
@@ -305,7 +306,7 @@ async function processMessage(client, m) {
     setImmediate(() => level(m));
   } catch (error) {
     // Silencia erros de timeout já tratados no manager
-    if (error.isTimeout) return;
+    if (error.isTimeout || error.isBusy) return;
     console.error(error)
     await client.sendMessage(m.chat, { text: `❌ Erro no comando ${command}:\n${error.message}` }, { quoted: m })
   }

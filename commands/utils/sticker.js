@@ -5,57 +5,62 @@ import { pipeline } from 'stream/promises'
 import exif from '../../lib/exif.js'
 import { runFfmpeg } from '../../lib/system/ffmpeg.js'
 
-/**
- * ZÆRØ BOT - Sticker Command Professional (2026 Edition)
- * Optimized for Fly.io (Low RAM) and high stability.
- */
+// Configuracoes tecnicas
+const LIMIT_IMAGE_BYTES = 100 * 1024
+const LIMIT_ANIM_BYTES = 500 * 1024
+const MAX_DOWNLOAD_BYTES = 12 * 1024 * 1024
+const FETCH_TIMEOUT_MS = 30000
+const FFMPEG_TIMEOUT_MS = 90000
+const MAX_VIDEO_SECONDS_HD = 8
+const MAX_VIDEO_SECONDS_LITE = 6
 
-// --- CONFIGURAÇÕES TÉCNICAS PROFISSIONAIS ---
-const LIMIT_IMAGE_BYTES = 100 * 1024          // 100KB (WhatsApp Standard)
-const LIMIT_ANIM_BYTES = 500 * 1024           // 500KB (WhatsApp Standard)
-const MAX_DOWNLOAD_BYTES = 12 * 1024 * 1024    // 12MB (Strict Limit)
-const FETCH_TIMEOUT_MS = 30000                // 30s
-const FFMPEG_TIMEOUT_MS = 90000               // 90s
-const MAX_VIDEO_SECONDS_HD = 8                // Reduzido para 8s conforme pedido
-const MAX_VIDEO_SECONDS_LITE = 6              // Reduzido para 6s conforme pedido
-
-const DARK_MSG = {
-  heavy: "❌ *Excede o limite.*\n🩸 Reduza para 6–8s.",
-  success: "🔥 *Poder materializado.*"
-};
+const MSG = {
+  heavy: '*Arquivo pesado demais.*\nEnvie um video menor (6s a 8s).',
+  timeout:
+    'Erro de timeout: o video ficou pesado para processar.\n\n' +
+    'Dicas:\n' +
+    '- Use video com no maximo 8 segundos\n' +
+    '- Use a flag -lite\n' +
+    '- Reduza a resolucao do video original',
+  waitingUrl: 'Baixando e processando midia da URL...',
+  invalidInput: (prefix, command) =>
+    `Responda uma imagem/video ou envie uma URL.\nUse *${prefix + command} -list* para ver opcoes.`
+}
 
 export default {
   command: ['sticker', 's'],
   category: 'utils',
   run: async (client, m, args, usedPrefix, command) => {
     const cleanupPaths = []
-    const safeUnlink = (p) => { try { if (p && fs.existsSync(p)) fs.unlinkSync(p) } catch {} }
+    const safeUnlink = (p) => {
+      try {
+        if (p && fs.existsSync(p)) fs.unlinkSync(p)
+      } catch {}
+    }
     const safeCleanupAll = () => cleanupPaths.forEach(safeUnlink)
 
     try {
       ensureTmp()
 
-      if (args[0] === '-list') {
-        return client.reply(m.chat, getHelpText(usedPrefix, command), m)
+      if (args[0] === '-list' || args[0] === '-menu') {
+        return client.reply(m.chat, getHelpText(usedPrefix), m)
       }
 
       const quoted = m.quoted ? m.quoted : m
       const mime = (quoted.msg || quoted).mimetype || ''
-      
-      // Validação Estrita de Tamanho (ZÆRØ DARK)
+
       const fileSize = (quoted.msg || quoted).fileLength || 0
       if (fileSize > MAX_DOWNLOAD_BYTES) {
-        return m.reply(DARK_MSG.heavy)
+        return m.reply(MSG.heavy)
       }
 
       const user = global.db?.data?.users?.[m.sender] || {}
-      const texto1 = user.metadatos || '✧ ZÆRØ BOT ✧'
-      const texto2 = user.metadatos2 || ''
+      const packDefault = user.metadatos || 'ZAERO BOT'
+      const authorDefault = user.metadatos2 || ''
 
-      const parsed = parseArgs(args)
-      const { urlArg, picked, marca, flags } = parsed
-      const pack = marca[0] || texto1
-      const author = marca.length > 1 ? marca[1] : texto2
+      const { urlArg, picked, marca, flags } = parseArgs(args)
+      const pack = marca[0] || packDefault
+      const author = marca.length > 1 ? marca[1] : authorDefault
       const mode = flags.hd ? 'hd' : 'lite'
 
       async function replyProcessing(text = '') {
@@ -65,37 +70,33 @@ export default {
         }
       }
 
-      // Mensagem de sucesso ao final (opcional, conforme pedido)
       const sendSuccess = async () => {
-          // await client.sendMessage(m.chat, { text: DARK_MSG.success }, { quoted: m }).catch(() => {})
-          await m.react('🔥').catch(() => {})
+        await m.react('\u2705').catch(() => {})
       }
 
-      // --- A) DOWNLOAD POR STREAMING (Anti-OOM) ---
       const fetchToFileLimited = async (url, outFile) => {
         const controller = new AbortController()
         const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
-        
+
         try {
           const res = await fetch(url, {
             signal: controller.signal,
             headers: { 'User-Agent': 'Mozilla/5.0 (StickerBot/2026)' }
           })
-          
+
           if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          
+
           const contentType = (res.headers.get('content-type') || '').toLowerCase()
           const contentLength = Number(res.headers.get('content-length') || '0')
           if (contentLength > MAX_DOWNLOAD_BYTES) throw new Error('Arquivo muito pesado')
 
           let downloadedBytes = 0
-          // Pipeline com verificação manual de tamanho para segurança extra
           const progressTracker = new (await import('stream')).Transform({
             transform(chunk, encoding, callback) {
               downloadedBytes += chunk.length
               if (downloadedBytes > MAX_DOWNLOAD_BYTES) {
                 controller.abort()
-                return callback(new Error('Download ultrapassou limite de 25MB'))
+                return callback(new Error('Download ultrapassou o limite de 12MB'))
               }
               callback(null, chunk)
             }
@@ -108,17 +109,15 @@ export default {
         }
       }
 
-      // --- B) PROCESSAMENTO DE VÍDEO (Iterativo p/ Caber em 500KB) ---
       const makeStickerFromVideoFile = async (inFile, seconds) => {
         const targetDur = mode === 'hd' ? MAX_VIDEO_SECONDS_HD : MAX_VIDEO_SECONDS_LITE
         const finalDur = Math.min(Number(seconds || targetDur) || targetDur, targetDur)
         const outWebp = tmp(`anim-${Date.now()}.webp`)
         cleanupPaths.push(outWebp)
 
-        // Configurações de tentativa (Loop Profissional)
         const fpsTries = mode === 'hd' ? [20, 18, 15] : [15, 12, 10]
         const qTries = mode === 'hd' ? [60, 52, 46, 40] : [42, 36, 30, 26]
-        const scales = [512, 384] // Fallback de escala se q falhar
+        const scales = [512, 384]
 
         let success = false
         for (const scale of scales) {
@@ -127,18 +126,21 @@ export default {
               const vf = [
                 `fps=${fps}`,
                 `scale=${scale}:${scale}:force_original_aspect_ratio=decrease`,
-                `pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000`,
-                `format=rgba`
+                'pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000',
+                'format=rgba'
               ].join(',')
 
               try {
-                await runFfmpeg([
-                  '-y', '-t', String(finalDur), '-i', inFile,
-                  '-vf', vf, '-an', '-vsync', '0', '-vcodec', 'libwebp',
-                  '-loop', '0', '-preset', 'default',
-                  '-compression_level', '6', '-q:v', String(q),
-                  outWebp
-                ], { timeoutMs: FFMPEG_TIMEOUT_MS })
+                await runFfmpeg(
+                  [
+                    '-y', '-t', String(finalDur), '-i', inFile,
+                    '-vf', vf, '-an', '-vsync', '0', '-vcodec', 'libwebp',
+                    '-loop', '0', '-preset', 'default',
+                    '-compression_level', '6', '-q:v', String(q),
+                    outWebp
+                  ],
+                  { timeoutMs: FFMPEG_TIMEOUT_MS }
+                )
 
                 const size = fs.statSync(outWebp).size
                 if (size <= LIMIT_ANIM_BYTES) {
@@ -147,7 +149,7 @@ export default {
                 }
               } catch (err) {
                 if (err.code === 'FFMPEG_TIMEOUT') throw err
-                continue // tenta proximo q
+                continue
               }
             }
             if (success) break
@@ -156,47 +158,38 @@ export default {
         }
 
         if (!success && fs.existsSync(outWebp)) {
-           // Se apos todas as tentativas ainda for maior, mas existir, envia o menor gerado (ou erro)
-           if (fs.statSync(outWebp).size > LIMIT_ANIM_BYTES + (50 * 1024)) {
-             throw new Error(DARK_MSG.heavy)
-           }
+          if (fs.statSync(outWebp).size > LIMIT_ANIM_BYTES + (50 * 1024)) {
+            throw new Error(MSG.heavy)
+          }
         }
 
         await sendSticker(outWebp, pack, author, cleanupPaths, client, m)
         await sendSuccess()
-        return
       }
 
-      // --- C) PROCESSAMENTO DE IMAGEM (Até 100KB) ---
       const makeStickerFromImageFile = async (inFile) => {
         const outWebp = tmp(`img-${Date.now()}.webp`)
         cleanupPaths.push(outWebp)
         const vf = buildVF(picked)
 
         const qTries = mode === 'hd' ? [80, 70, 60] : [70, 60, 50, 40]
-        
-        let success = false
         for (const q of qTries) {
-          await runFfmpeg([
-            '-y', '-i', inFile, '-vf', vf, '-an', '-vcodec', 'libwebp',
-            '-preset', 'picture', '-compression_level', '6', '-q:v', String(q),
-            outWebp
-          ], { timeoutMs: FFMPEG_TIMEOUT_MS })
+          await runFfmpeg(
+            [
+              '-y', '-i', inFile, '-vf', vf, '-an', '-vcodec', 'libwebp',
+              '-preset', 'picture', '-compression_level', '6', '-q:v', String(q),
+              outWebp
+            ],
+            { timeoutMs: FFMPEG_TIMEOUT_MS }
+          )
 
-          if (fs.statSync(outWebp).size <= LIMIT_IMAGE_BYTES) {
-            success = true
-            break
-          }
+          if (fs.statSync(outWebp).size <= LIMIT_IMAGE_BYTES) break
         }
 
         await sendSticker(outWebp, pack, author, cleanupPaths, client, m)
         await sendSuccess()
-        return
       }
 
-      // --- LOGICA PRINCIPAL DE EXECUÇÃO ---
-
-      // 1) Midia enviada diretamente (WhatsApp)
       if (/image|video|webp/i.test(mime)) {
         await replyProcessing()
         const isVideo = /video/i.test(mime)
@@ -204,9 +197,8 @@ export default {
         const inPath = tmp(`msg-${Date.now()}${ext}`)
         cleanupPaths.push(inPath)
 
-        // Usamos streaming do quoted.download se possivel, ou salvamos buffer
         const buffer = await quoted.download()
-        if (!buffer) throw new Error('Falha ao baixar mídia do WhatsApp')
+        if (!buffer) throw new Error('Falha ao baixar midia do WhatsApp')
         fs.writeFileSync(inPath, buffer)
 
         if (isVideo) {
@@ -215,43 +207,40 @@ export default {
         } else {
           await makeStickerFromImageFile(inPath)
         }
+
         return safeCleanupAll()
       }
 
-      // 2) URL
       if (urlArg) {
-        await replyProcessing('《✧》 Baixando e processando mídia da URL...')
+        await replyProcessing(MSG.waitingUrl)
         const inPath = tmp(`url-${Date.now()}.tmp`)
         cleanupPaths.push(inPath)
-        
+
         const { contentType } = await fetchToFileLimited(urlArg, inPath)
         const isVideo = contentType.includes('video') || /\.(mp4|webm|mov|mkv)/i.test(urlArg)
-        
+
         if (isVideo) {
           await makeStickerFromVideoFile(inPath, MAX_VIDEO_SECONDS_HD)
         } else {
           await makeStickerFromImageFile(inPath)
         }
-        await sendSuccess()
+
         return safeCleanupAll()
       }
 
-      return client.reply(m.chat, `《✧》 Marque uma imagem/vídeo ou envie uma URL.\nUse *${usedPrefix + command} -list* para opções.`, m)
-
+      return client.reply(m.chat, MSG.invalidInput(usedPrefix, command), m)
     } catch (e) {
       safeCleanupAll()
       console.error('[Sticker Error]', e)
-      
+
       if (e.code === 'FFMPEG_TIMEOUT') {
-        return m.reply('❌ *Erro de Timeout:* O vídeo é muito pesado para processar em 2026.\n\n*Dicas:*\n- Use um vídeo de no máximo 8 segundos\n- Adicione a flag *-lite*\n- Reduza a resolução do vídeo original')
+        return m.reply(MSG.timeout)
       }
 
-      return m.reply(`> ❌ *Erro:* ${e.message}`)
+      return m.reply(`Erro: ${e.message}`)
     }
   }
 }
-
-// --- HELPERS ---
 
 async function sendSticker(webpPath, pack, author, cleanupPaths, client, m) {
   const data = fs.readFileSync(webpPath)
@@ -261,33 +250,28 @@ async function sendSticker(webpPath, pack, author, cleanupPaths, client, m) {
   await client.sendMessage(m.chat, { sticker: { url: stickerPath } }, { quoted: m })
 }
 
-function getHelpText(usedPrefix, command) {
-  return `╔═══『 ✧ STICKER PRO ✧ 』═══╗
-║
-║ ✨ *$prefixsticker* <mídia|url>
-║
-╠══ 🛠️ OPÇÕES ══
-║
-║ 🚀 *-lite* (Padrão: Máxima estabilidade)
-║ 💎 *-hd* (Alta qualidade, pode falhar)
-║ 📦 *Pack • Autor* (Separado por •)
-║
-╠══ 🎨 FORMAS ══
-║
-║ -c (Círculo), -r (Arredondado), -v (Coração)
-║ -t (Triângulo), -s (Estrela), -d (Diamante)
-║
-╠══ 🎭 EFEITOS ══
-║
-║ -blur, -sepia, -grayscale, -invert
-║ -flip, -flop, -rotate90
-║
-╚═══『 ⭐ 2026 EDITION ⭐ 』═══╝`.replace(/\$prefix/g, usedPrefix)
+function getHelpText(usedPrefix) {
+  return [
+    '*MENU STICKER*',
+    '',
+    `${usedPrefix}s`,
+    `${usedPrefix}s -lite`,
+    `${usedPrefix}s -hd`,
+    `${usedPrefix}s url`,
+    `${usedPrefix}s Nome do pack | Autor`,
+    '',
+    '*Formas:* -c -r -v -t -s -d',
+    '*Efeitos:* -blur -sepia -grayscale -invert -flip -flop -rotate90',
+    '',
+    'Dica: responda uma imagem ou video para criar sticker.'
+  ].join('\n')
 }
 
 const { writeExif } = exif
 const tmp = (name) => path.join('./tmp', name)
-const ensureTmp = () => { if (!fs.existsSync('./tmp')) fs.mkdirSync('./tmp', { recursive: true }) }
+const ensureTmp = () => {
+  if (!fs.existsSync('./tmp')) fs.mkdirSync('./tmp', { recursive: true })
+}
 const isUrl = (text) => /https?:\/\/[^\s]+/i.test(text)
 
 function parseArgs(args) {
@@ -300,8 +284,23 @@ function parseArgs(args) {
     else if (!['-hd', '-lite'].includes(a)) rest.push(a)
   }
 
-  const shapeArgs = { '-c': 'circle', '-t': 'triangle', '-s': 'star', '-r': 'roundrect', '-v': 'heart', '-d': 'diamond' }
-  const effectArgs = { '-blur': 'blur', '-sepia': 'sepia', '-grayscale': 'grayscale', '-invert': 'invert', '-flip': 'flip', '-flop': 'flop', '-rotate90': 'rotate90' }
+  const shapeArgs = {
+    '-c': 'circle',
+    '-t': 'triangle',
+    '-s': 'star',
+    '-r': 'roundrect',
+    '-v': 'heart',
+    '-d': 'diamond'
+  }
+  const effectArgs = {
+    '-blur': 'blur',
+    '-sepia': 'sepia',
+    '-grayscale': 'grayscale',
+    '-invert': 'invert',
+    '-flip': 'flip',
+    '-flop': 'flop',
+    '-rotate90': 'rotate90'
+  }
 
   const picked = []
   for (const a of rest) {
@@ -309,20 +308,28 @@ function parseArgs(args) {
     if (effectArgs[a]) picked.push({ type: 'effect', value: effectArgs[a] })
   }
 
-  const filteredText = rest.filter(a => !shapeArgs[a] && !effectArgs[a]).join(' ').trim()
-  const marca = filteredText.split(/[•|]/).map(s => s.trim()).filter(Boolean)
+  const filteredText = rest.filter((a) => !shapeArgs[a] && !effectArgs[a]).join(' ').trim()
+  const marca = filteredText.split(/[•|]/).map((s) => s.trim()).filter(Boolean)
 
   return { urlArg, picked, marca, flags }
 }
 
 function buildVF(picked) {
-  const shape = picked.find(x => x.type === 'shape')?.value
-  const effects = picked.filter(x => x.type === 'effect').map(x => x.value)
-  let vf = ['scale=512:512:force_original_aspect_ratio=decrease', 'pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000', 'format=rgba']
+  const shape = picked.find((x) => x.type === 'shape')?.value
+  const effects = picked.filter((x) => x.type === 'effect').map((x) => x.value)
+  const vf = [
+    'scale=512:512:force_original_aspect_ratio=decrease',
+    'pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000',
+    'format=rgba'
+  ]
 
-  if (shape === 'circle') vf.push('geq=r=\'r(X,Y)\':g=\'g(X,Y)\':b=\'b(X,Y)\':a=\'if(lte(hypot(X-256,Y-256),250),255,0)\'')
-  if (shape === 'heart') vf.push('geq=r=\'r(X,Y)\':g=\'g(X,Y)\':b=\'b(X,Y)\':a=\'if(lte(pow(pow((X-256)/170,2)+pow((Y-256)/170,2)-1,3)-pow((X-256)/170,2)*pow((Y-256)/170,3),0),255,0)\'')
-  
+  if (shape === 'circle') {
+    vf.push("geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(lte(hypot(X-256,Y-256),250),255,0)'")
+  }
+  if (shape === 'heart') {
+    vf.push("geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(lte(pow(pow((X-256)/170,2)+pow((Y-256)/170,2)-1,3)-pow((X-256)/170,2)*pow((Y-256)/170,3),0),255,0)'")
+  }
+
   for (const e of effects) {
     if (e === 'blur') vf.push('gblur=sigma=5')
     if (e === 'sepia') vf.push('colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131')
