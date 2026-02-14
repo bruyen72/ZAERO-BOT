@@ -235,7 +235,8 @@ async function processMessage(client, m) {
   // Rate Limit por Usuário (1 comando a cada 1.5s)
   const userRateLimit = 1500;
   if (!isOwners && (Date.now() - (user.lastCommandTime || 0)) < userRateLimit) {
-    return; // Ignora silenciosamente para não poluir
+    // Silencioso, ou opcionalmente m.react('⏳')
+    return;
   }
   user.lastCommandTime = Date.now();
 

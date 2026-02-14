@@ -6,7 +6,7 @@ export default {
   category: 'nsfw',
   run: async (client, m, args, usedPrefix, command) => {
     try {
-      if (!globalThis.db.data.chats[m.chat]?.nsfw) return m.reply(`ꕥ O conteúdo *NSFW* está desabilitado neste grupo.\n\nUm *administrador* pode habilitá-lo com o comando:\n» *${usedPrefix}nsfw on*`)
+      if (!globalThis.db.data.chats[m.chat]?.nsfw) return m.reply(`O conteúdo *NSFW* está desabilitado neste grupo.\n\nUm *administrador* pode habilitá-lo com:\n>> *${usedPrefix}nsfw on*`)
       if (!args[0]) return client.reply(m.chat, `《✧》 Você deve especificar tags para pesquisar\n> Exemplo » *${usedPrefix + command} neko*`, m)
       await m.react('🕒')
       const tag = args[0].replace(/\s+/g, '_')
@@ -32,7 +32,7 @@ export default {
         return await m.reply(`> ⚠️ *Mídia indisponível*\n\nTodas as URLs retornadas pelo Gelbooru falharam ao carregar.\nTente outra tag ou tente novamente mais tarde.`)
       }
 
-      const caption = `ꕥ Resultados para » ${tag}`
+      const caption = `*ZÆRØ BOT — ADULTO (18+)*\n\n📌 Tags: ${tag}\n\n⚠️ *AVISO:* O conteúdo 18+ é de sua total responsabilidade. O bot não se responsabiliza pelo uso das mídias. Você é um adulto, use com consciência.`
       const isVideo = mediaList[0].endsWith('.mp4')
 
       if (isVideo) {

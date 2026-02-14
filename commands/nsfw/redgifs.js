@@ -72,11 +72,9 @@ function ensureChatData(chatId) {
 
 function buildCaption(media = {}, sourceLabel = 'RedGifs') {
   return (
-    `*REDGIFS PRO*\n\n` +
-    `Titulo: ${cleanText(media.title)}\n` +
-    `Duracao: ${humanDuration(media.duration)}\n` +
-    `Fonte: ${sourceLabel || 'RedGifs'}\n\n` +
-    `> _Video otimizado para WhatsApp Mobile_`
+    `*ZÆRØ BOT — ADULTO (18+)*\n\n` +
+    `Título: ${cleanText(media.title)}\n\n` +
+    `⚠️ *AVISO:* O conteúdo 18+ é de sua total responsabilidade. O bot não se responsabiliza pelo uso das mídias. Você é um adulto, use com consciência.`
   )
 }
 

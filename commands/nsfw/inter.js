@@ -211,11 +211,12 @@ export default {
     const fromMention = `@${from.split('@')[0]}`
     const toMention = `@${to.split('@')[0]}`
     const genero = global.db.data.users[from]?.genre || 'Oculto'
-    const captionText = captions[currentCommand](fromMention, toMention, genero)
-    const caption =
-      to !== from
-        ? `${fromMention} ${captionText} ${toMention} ${getRandomSymbol()}`
-        : `${fromMention} ${captionText} ${getRandomSymbol()}`
+    const actionText = captions[currentCommand](fromMention, toMention, genero)
+    const baseCaption = to !== from
+        ? `${fromMention} ${actionText} ${toMention} ${getRandomSymbol()}`
+        : `${fromMention} ${actionText} ${getRandomSymbol()}`
+
+    const caption = `*ZÆRØ BOT — ADULTO (18+)*\n\n${baseCaption}\n\n⚠️ *AVISO:* O conteúdo 18+ é de sua total responsabilidade. O bot não se responsabiliza pelo uso das mídias. Você é um adulto, use com consciência.`
 
     try {
       await m.react('\u23F3')

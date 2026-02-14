@@ -15,14 +15,9 @@ const MAX_VIDEO_SECONDS_HD = 8
 const MAX_VIDEO_SECONDS_LITE = 6
 
 const MSG = {
-  heavy: '*Arquivo pesado demais.*\nEnvie um video menor (6s a 8s).',
-  timeout:
-    'Erro de timeout: o video ficou pesado para processar.\n\n' +
-    'Dicas:\n' +
-    '- Use video com no maximo 8 segundos\n' +
-    '- Use a flag -lite\n' +
-    '- Reduza a resolucao do video original',
-  waitingUrl: 'Baixando e processando midia da URL...',
+  heavy: "❌ Excede o limite.\n🩸 Reduza para 6–8s.",
+  timeout: "⏱️ Núcleo sem energia.\n🔥 Envie menor.",
+  waitingUrl: "⚡ 𝙕Æ𝙍Ø está despertando...\n⏳ Preparando mídia...",
   invalidInput: (prefix, command) =>
     `Responda uma imagem/video ou envie uma URL.\nUse *${prefix + command} -list* para ver opcoes.`
 }

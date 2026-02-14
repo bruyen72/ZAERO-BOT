@@ -2,7 +2,8 @@ import fs from 'fs'
 import moment from 'moment-timezone'
 import { getDevice } from '@whiskeysockets/baileys'
 import { apiCache } from '../../lib/cache.js'
-import { bodyMenu, menuObject } from '../../lib/commands.js'
+import * as menuEn from '../../lib/commands.js'
+import * as menuPt from '../../lib/commands_ptbr.js'
 
 function normalize(text = '') {
   return String(text || '')
@@ -52,35 +53,52 @@ const categoryRemap = {
   nsfw: 'nsfw'
 }
 
-function resolveCategory(input = '') {
+function resolveCategory(input = '', menuObject) {
   const key = normalize(input)
   if (!key) return null
   if (menuObject[key]) return key
   return categoryRemap[key] || null
 }
 
+function formatMs(ms) {
+  const seconds = Math.floor(ms / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+
+  return [
+    days ? `${days}d` : null,
+    `${hours % 24}h`,
+    `${minutes % 60}m`,
+    `${seconds % 60}s`
+  ].filter(Boolean).join(' ')
+}
+
 export default {
   command: ['allmenu', 'help', 'menu', 'ajuda', 'comandos'],
-  category: 'info',
+  category: 'main',
   run: async (client, m, args, usedPrefix, command) => {
     try {
+      // Prioriza PT-BR se disponível
+      const bodyMenu = menuPt.bodyMenu || menuEn.bodyMenu
+      const menuObject = menuPt.menuObject || menuEn.menuObject
+
       const rawCategory = String(args[0] || '').trim()
-      const resolvedCategory = resolveCategory(rawCategory)
+      const resolvedCategory = resolveCategory(rawCategory, menuObject)
       const cacheKey = `menu_text_${m.sender}_${normalize(rawCategory || 'all')}`
       let payload = apiCache.get(cacheKey)
 
       if (!payload) {
         const botId = client?.user?.id?.split(':')[0] + '@s.whatsapp.net'
         const botSettings = global.db?.data?.settings?.[botId] || {}
-        const botname = normalizeBotDisplayName(botSettings.botname || botSettings.namebot || global.botName)
-        const owner = resolveOwnerDisplayName(botSettings.owner || global.owner?.[0] || '')
-        const banner = botSettings.banner || global.botLogo || './ZK.png'
         const usersCount = Object.keys(global.db?.data?.users || {}).length
         const device = getDevice(m.key?.id || '')
         const senderMention = `@${m.sender.split('@')[0]}`
         const dateText = moment.tz('America/Sao_Paulo').format('DD/MM/YYYY')
         const timeText = moment.tz('America/Sao_Paulo').format('HH:mm')
-        const uptime = client.uptime ? formatMs(Date.now() - client.uptime) : 'Desconhecido'
+        
+        // Correção de uptime usando process.uptime() já que client.uptime costuma ser nulo
+        const uptime = formatMs(process.uptime() * 1000)
 
         let text = ''
         if (!resolvedCategory) {
@@ -101,6 +119,7 @@ export default {
           return m.reply(`Categoria *${rawCategory}* não encontrada. Use ${usedPrefix}menu para ver as opções.`)
         }
 
+        const banner = botSettings.banner || global.botLogo || './ZK.png'
         payload = { text, banner }
         apiCache.set(cacheKey, payload, 180)
       }
@@ -145,35 +164,9 @@ export default {
         { quoted: m }
       )
     } catch (e) {
+      console.error(e)
       await m.reply(`Erro ao executar o comando *${usedPrefix + command}*.\n\nDetalhes: ${e.message}`)
     }
   }
 }
 
-function formatMs(ms) {
-  const seconds = Math.floor(ms / 1000)
-  const minutes = Math.floor(seconds / 60)
-  const hours = Math.floor(minutes / 60)
-  const days = Math.floor(hours / 24)
-
-  return [
-    days ? `${days}d` : null,
-    `${hours % 24}h`,
-    `${minutes % 60}m`,
-    `${seconds % 60}s`
-  ].filter(Boolean).join(' ')
-}
-
-function formatMs(ms) {
-  const seconds = Math.floor(ms / 1000)
-  const minutes = Math.floor(seconds / 60)
-  const hours = Math.floor(minutes / 60)
-  const days = Math.floor(hours / 24)
-
-  return [
-    days ? `${days}d` : null,
-    `${hours % 24}h`,
-    `${minutes % 60}m`,
-    `${seconds % 60}s`
-  ].filter(Boolean).join(' ')
-}
