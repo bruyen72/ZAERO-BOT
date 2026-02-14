@@ -168,6 +168,9 @@ async function processMessage(client, m) {
                   m.message?.conversation || m.message?.extendedTextMessage?.text || '';
   const fullText = typeof rawText === 'string' ? rawText.trim() : '';
 
+  // Ignora mensagens compostas apenas por pontos (., .., ..., etc).
+  if (/^\.+$/.test(fullText)) return;
+
   // Validação estrita do prefixo
   let command = '', args = [], text = '', usedPrefix = ''
 

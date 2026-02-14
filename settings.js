@@ -1,5 +1,12 @@
 import fs from 'fs';
 
+try {
+  if (typeof process.loadEnvFile === 'function') {
+    process.loadEnvFile('.env');
+  }
+} catch {}
+
+
 global.owner = [''] // Configure seu número aqui
 global.botNumber = ''
 
