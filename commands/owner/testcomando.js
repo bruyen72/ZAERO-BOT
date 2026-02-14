@@ -6,6 +6,9 @@ import { getHeavyTaskStats } from '../../lib/system/heavyTaskManager.js'
 import { getFfmpegQueueStats, runFfmpeg } from '../../lib/system/ffmpeg.js'
 import { COMPRESS_THRESHOLD, MAX_WA_VIDEO_BYTES, transcodeForWhatsapp } from '../../lib/nsfwShared.js'
 
+const BENCH_LOCK_TTL_MS = 20 * 60 * 1000
+let activeBenchRun = null
+
 function clampInt(value, min, max, fallback) {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return fallback
@@ -30,6 +33,12 @@ function percentile(list = [], p = 95) {
   return sorted[index]
 }
 
+function isTimeoutLike(error) {
+  const code = String(error?.code || '')
+  if (code === 'BENCH_TIMEOUT' || code === 'FFMPEG_TIMEOUT' || code === 'FFMPEG_QUEUE_TIMEOUT') return true
+  return /timeout/i.test(String(error?.message || ''))
+}
+
 function parseInput(args = []) {
   const cfg = {
     preset: 'custom',
@@ -39,7 +48,7 @@ function parseInput(args = []) {
     durationSec: 3,
     query: 'ass',
     redMode: 'video', // video | gif | both
-    timeoutMs: 90000,
+    timeoutMs: 60000,
     reencode: true,
   }
 
@@ -52,7 +61,7 @@ function parseInput(args = []) {
       durationSec: 2,
       query: 'ass',
       redMode: 'video',
-      timeoutMs: 90000,
+      timeoutMs: 45000,
       reencode: true,
     },
     extremo: {
@@ -60,14 +69,15 @@ function parseInput(args = []) {
       profile: 'mix',
       users: 4,
       rounds: 2,
-      durationSec: 4,
+      durationSec: 3,
       query: 'ass',
       redMode: 'both',
-      timeoutMs: 120000,
+      timeoutMs: 70000,
       reencode: true,
     },
   }
 
+  let reencodeOverride = null
   const free = []
   for (const raw of args) {
     const token = String(raw || '').trim()
@@ -76,21 +86,22 @@ function parseInput(args = []) {
 
     if (PRESETS[lower]) {
       Object.assign(cfg, PRESETS[lower])
+      if (reencodeOverride !== null) cfg.reencode = reencodeOverride
       continue
     }
 
     if (lower.startsWith('-users=') || lower.startsWith('-u=')) {
       const value = lower.includes('-users=') ? lower.slice(7) : lower.slice(3)
-      cfg.users = clampInt(value, 1, 8, cfg.users)
+      cfg.users = clampInt(value, 1, 4, cfg.users)
       continue
     }
     if (lower.startsWith('-rounds=') || lower.startsWith('-r=')) {
       const value = lower.includes('-rounds=') ? lower.slice(8) : lower.slice(3)
-      cfg.rounds = clampInt(value, 1, 5, cfg.rounds)
+      cfg.rounds = clampInt(value, 1, 3, cfg.rounds)
       continue
     }
     if (lower.startsWith('-dur=')) {
-      cfg.durationSec = clampInt(lower.slice(5), 1, 8, cfg.durationSec)
+      cfg.durationSec = clampInt(lower.slice(5), 1, 6, cfg.durationSec)
       continue
     }
     if (lower.startsWith('-mode=')) {
@@ -99,7 +110,7 @@ function parseInput(args = []) {
       continue
     }
     if (lower.startsWith('-timeout=')) {
-      cfg.timeoutMs = clampInt(lower.slice(9), 10000, 240000, cfg.timeoutMs)
+      cfg.timeoutMs = clampInt(lower.slice(9), 10000, 120000, cfg.timeoutMs)
       continue
     }
     if (lower.startsWith('-q=')) {
@@ -107,10 +118,12 @@ function parseInput(args = []) {
       continue
     }
     if (lower === '-noreencode') {
+      reencodeOverride = false
       cfg.reencode = false
       continue
     }
     if (lower === '-reencode') {
+      reencodeOverride = true
       cfg.reencode = true
       continue
     }
@@ -124,6 +137,7 @@ function parseInput(args = []) {
     free.push(token)
   }
 
+  if (reencodeOverride !== null) cfg.reencode = reencodeOverride
   if (free.length > 0) cfg.query = free.join(' ').trim() || cfg.query
   return cfg
 }
@@ -204,7 +218,12 @@ async function runStickerLikeJob(jobId, durationSec, timeoutMs) {
   ]
 
   try {
-    await withTimeout(() => runFfmpeg(args, { timeoutMs }), timeoutMs + 2000)
+    const ffTimeoutMs = Math.max(10000, Math.min(timeoutMs, 60000))
+    const queueWaitTimeoutMs = Math.max(10000, Math.min(ffTimeoutMs, 30000))
+    await withTimeout(
+      () => runFfmpeg(args, { timeoutMs: ffTimeoutMs, queueWaitTimeoutMs }),
+      ffTimeoutMs + 3000,
+    )
     const size = fs.existsSync(outPath) ? fs.statSync(outPath).size : 0
     return {
       ok: true,
@@ -218,7 +237,7 @@ async function runStickerLikeJob(jobId, durationSec, timeoutMs) {
       kind: 'sticker',
       elapsedMs: Date.now() - startedAt,
       sizeBytes: 0,
-      timeout: error?.code === 'BENCH_TIMEOUT' || error?.code === 'FFMPEG_TIMEOUT',
+      timeout: isTimeoutLike(error),
       error: error?.message || String(error),
     }
   } finally {
@@ -234,6 +253,7 @@ async function runRedLikeJob(jobId, query, mode, timeoutMs, reencode = true) {
   const allowedMediaTypes = allowedMediaTypesForMode(effectiveMode)
 
   try {
+    const fetchTimeoutMs = Math.max(15000, Math.min(timeoutMs, 60000))
     const media = await withTimeout(
       () =>
         fetchNsfwMedia(query, null, {
@@ -246,7 +266,7 @@ async function runRedLikeJob(jobId, query, mode, timeoutMs, reencode = true) {
           nicheOverride: query,
           strictQuery: true,
         }),
-      timeoutMs,
+      fetchTimeoutMs,
     )
 
     if (!media) {
@@ -273,18 +293,36 @@ async function runRedLikeJob(jobId, query, mode, timeoutMs, reencode = true) {
     if (reencode && Buffer.isBuffer(media?.buffer) && media.buffer.length > 0) {
       const transcodeStart = Date.now()
       try {
+        const primaryTcTimeout = Math.max(20000, Math.min(timeoutMs, 50000))
+        const primaryTcQueueWait = Math.max(10000, Math.min(primaryTcTimeout, 25000))
         let normalized = await withTimeout(
           () =>
             transcodeForWhatsapp(
               media.buffer,
               media.buffer.length > COMPRESS_THRESHOLD
-                ? { preset: 'veryfast', crf: 27, maxBitrate: 800, timeoutMs: 150000, limitSeconds: 15 }
-                : { preset: 'fast', crf: 24, maxBitrate: 1000, timeoutMs: 120000, limitSeconds: 15 },
+                ? {
+                    preset: 'veryfast',
+                    crf: 27,
+                    maxBitrate: 800,
+                    timeoutMs: primaryTcTimeout,
+                    queueWaitTimeoutMs: primaryTcQueueWait,
+                    limitSeconds: 15,
+                  }
+                : {
+                    preset: 'fast',
+                    crf: 24,
+                    maxBitrate: 1000,
+                    timeoutMs: primaryTcTimeout,
+                    queueWaitTimeoutMs: primaryTcQueueWait,
+                    limitSeconds: 15,
+                  },
             ),
-          timeoutMs + 60000,
+          primaryTcTimeout + 5000,
         )
 
         if (normalized.length > MAX_WA_VIDEO_BYTES) {
+          const aggressiveTcTimeout = Math.max(25000, Math.min(timeoutMs + 10000, 65000))
+          const aggressiveTcQueueWait = Math.max(12000, Math.min(aggressiveTcTimeout, 30000))
           normalized = await withTimeout(
             () =>
               transcodeForWhatsapp(normalized, {
@@ -292,10 +330,11 @@ async function runRedLikeJob(jobId, query, mode, timeoutMs, reencode = true) {
                 crf: 30,
                 maxBitrate: 450,
                 scale: '640:-2',
-                timeoutMs: 180000,
+                timeoutMs: aggressiveTcTimeout,
+                queueWaitTimeoutMs: aggressiveTcQueueWait,
                 limitSeconds: 12,
               }),
-            timeoutMs + 90000,
+            aggressiveTcTimeout + 5000,
           )
         }
 
@@ -313,7 +352,7 @@ async function runRedLikeJob(jobId, query, mode, timeoutMs, reencode = true) {
           sizeBytesFinal: 0,
           transcodeMs: Date.now() - transcodeStart,
           reencoded: false,
-          timeout: error?.code === 'BENCH_TIMEOUT' || error?.code === 'FFMPEG_TIMEOUT',
+          timeout: isTimeoutLike(error),
           error: `reencode: ${error?.message || String(error)}`,
         }
       }
@@ -339,7 +378,7 @@ async function runRedLikeJob(jobId, query, mode, timeoutMs, reencode = true) {
       elapsedMs: Date.now() - startedAt,
       mediaType: 'none',
       sizeBytes: 0,
-      timeout: error?.code === 'BENCH_TIMEOUT',
+      timeout: isTimeoutLike(error),
       error: error?.message || String(error),
     }
   }
@@ -401,102 +440,125 @@ export default {
   command: ['testcomando', 'testcmd', 'benchcomando'],
   category: 'mod',
   isOwner: true,
-  timeoutMs: 300000,
+  timeoutMs: 180000,
   run: async (client, m, args, usedPrefix) => {
-    const cfg = parseInput(args)
-    const redModeEffective = resolveEffectiveRedMode(cfg.redMode)
-    const heavyBefore = getHeavyTaskStats()
-    const ffBefore = getFfmpegQueueStats()
-    const memBefore = memorySnapshot()
-
-    await m.react('\u23F3').catch(() => {})
-    await client.reply(
-      m.chat,
-      `Bench iniciado...\nperfil=${cfg.profile} users=${cfg.users} rounds=${cfg.rounds} redMode=${cfg.redMode} (efetivo=${redModeEffective}) reencode=${cfg.reencode ? 'on' : 'off'} query="${cfg.query}"`,
-      m,
-    )
-
-    const startedAt = Date.now()
-    const results = []
-    let ffPeakActive = ffBefore.active
-    let ffPeakWaiting = ffBefore.waiting
-    const monitor = setInterval(() => {
-      const stats = getFfmpegQueueStats()
-      ffPeakActive = Math.max(ffPeakActive, stats.active)
-      ffPeakWaiting = Math.max(ffPeakWaiting, stats.waiting)
-    }, 100)
-
-    try {
-      for (let round = 1; round <= cfg.rounds; round += 1) {
-        const wave = []
-        for (let user = 1; user <= cfg.users; user += 1) {
-          const jobKind = pickJobKind(cfg.profile, user, round)
-          const jobId = `r${round}u${user}`
-
-          if (jobKind === 'sticker') {
-            wave.push(runStickerLikeJob(jobId, cfg.durationSec, cfg.timeoutMs))
-          } else {
-            wave.push(runRedLikeJob(jobId, cfg.query, redModeEffective, cfg.timeoutMs, cfg.reencode))
-          }
-        }
-
-        const settled = await Promise.all(wave)
-        results.push(...settled)
-      }
-    } finally {
-      clearInterval(monitor)
+    if (activeBenchRun && Date.now() - activeBenchRun.startedAt < BENCH_LOCK_TTL_MS) {
+      const elapsedMs = Date.now() - activeBenchRun.startedAt
+      const elapsedSec = Math.max(1, Math.round(elapsedMs / 1000))
+      return client.reply(
+        m.chat,
+        `Ja existe bench em execucao (${elapsedSec}s): perfil=${activeBenchRun.profile} query="${activeBenchRun.query}".\nAguarde terminar para evitar travamento.`,
+        m,
+      )
     }
 
-    const totalMs = Date.now() - startedAt
-    const summary = summarizeResults(results)
-    const heavyAfter = getHeavyTaskStats()
-    const ffAfter = getFfmpegQueueStats()
-    const memAfter = memorySnapshot()
+    activeBenchRun = {
+      startedAt: Date.now(),
+      profile: 'mix',
+      query: 'ass',
+      chat: m.chat,
+    }
 
-    const redEmptyFail = results.filter((r) => !r.ok && r.kind === 'red' && r.error === 'empty').length
-    const criticalFail = results.filter((r) => !r.ok && !(r.kind === 'red' && r.error === 'empty')).length
-    const criticalFailRate = summary.total > 0 ? criticalFail / summary.total : 1
-    const travou = summary.timeout > 0 || criticalFailRate >= 0.25
-    const status = travou ? 'SIM' : 'NAO'
+    try {
+      const cfg = parseInput(args)
+      activeBenchRun.profile = cfg.profile
+      activeBenchRun.query = cfg.query
+      const redModeEffective = resolveEffectiveRedMode(cfg.redMode)
+      const heavyBefore = getHeavyTaskStats()
+      const ffBefore = getFfmpegQueueStats()
+      const memBefore = memorySnapshot()
 
-    const lines = [
-      '*BENCH COMANDO*',
-      `travou: ${status}`,
-      `preset=${cfg.preset}`,
-      `perfil=${cfg.profile} users=${cfg.users} rounds=${cfg.rounds} totalJobs=${summary.total}`,
-      `redMode solicitado=${cfg.redMode} efetivo=${redModeEffective}`,
-      `reencode=${cfg.reencode ? 'on' : 'off'}`,
-      `query="${cfg.query}"`,
-      '',
-      '[resultado geral]',
-      `ok=${summary.ok} fail=${summary.fail} timeout=${summary.timeout}`,
-      `fail_critico=${criticalFail} fail_red_empty=${redEmptyFail}`,
-      `tempo total=${totalMs}ms avg=${summary.avgMs.toFixed(0)}ms p95=${summary.p95.toFixed(0)}ms`,
-      '',
-      '[por tipo]',
-      kindLine('sticker', summary.byKind.sticker || []),
-      kindLine('red', summary.byKind.red || []),
-      '',
-      '[filas]',
-      `heavy antes: limit=${heavyBefore.limit} active=${heavyBefore.active} waiting=${heavyBefore.waiting}`,
-      `heavy depois: limit=${heavyAfter.limit} active=${heavyAfter.active} waiting=${heavyAfter.waiting}`,
-      `ffmpeg antes: limit=${ffBefore.limit} active=${ffBefore.active} waiting=${ffBefore.waiting}`,
-      `ffmpeg pico: active=${ffPeakActive} waiting=${ffPeakWaiting}`,
-      `ffmpeg depois: limit=${ffAfter.limit} active=${ffAfter.active} waiting=${ffAfter.waiting}`,
-      '',
-      '[memoria]',
-      `antes: rss=${mb(memBefore.rss)} heap=${mb(memBefore.heapUsed)}/${mb(memBefore.heapTotal)} host=${memBefore.hostPct}%`,
-      `depois: rss=${mb(memAfter.rss)} heap=${mb(memAfter.heapUsed)}/${mb(memAfter.heapTotal)} host=${memAfter.hostPct}%`,
-      '',
-      '[metodo melhor]',
-      '1) Para entrega rapida: .red <termo> (video mp4 com gifPlayback)',
-      '2) Para sticker sob carga: .s -lite e video <= 6s',
-      '3) Em pico: manter ffmpeg concorrencia=1',
-      '',
-      `uso: ${usedPrefix}testcomando [rapido|extremo|mix|sticker|red] [termo] [-users=4] [-rounds=1] [-dur=3] [-mode=video|gif|both] [-noreencode]`,
-    ]
+      await m.react('\u23F3').catch(() => {})
+      await client.reply(
+        m.chat,
+        `Bench iniciado...\nperfil=${cfg.profile} users=${cfg.users} rounds=${cfg.rounds} redMode=${cfg.redMode} (efetivo=${redModeEffective}) reencode=${cfg.reencode ? 'on' : 'off'} query="${cfg.query}"`,
+        m,
+      )
 
-    await client.reply(m.chat, lines.join('\n'), m)
-    await m.react('\u2705').catch(() => {})
+      const startedAt = Date.now()
+      const results = []
+      let ffPeakActive = ffBefore.active
+      let ffPeakWaiting = ffBefore.waiting
+      const monitor = setInterval(() => {
+        const stats = getFfmpegQueueStats()
+        ffPeakActive = Math.max(ffPeakActive, stats.active)
+        ffPeakWaiting = Math.max(ffPeakWaiting, stats.waiting)
+      }, 100)
+
+      try {
+        for (let round = 1; round <= cfg.rounds; round += 1) {
+          const wave = []
+          for (let user = 1; user <= cfg.users; user += 1) {
+            const jobKind = pickJobKind(cfg.profile, user, round)
+            const jobId = `r${round}u${user}`
+
+            if (jobKind === 'sticker') {
+              wave.push(runStickerLikeJob(jobId, cfg.durationSec, cfg.timeoutMs))
+            } else {
+              wave.push(runRedLikeJob(jobId, cfg.query, redModeEffective, cfg.timeoutMs, cfg.reencode))
+            }
+          }
+
+          const settled = await Promise.all(wave)
+          results.push(...settled)
+        }
+      } finally {
+        clearInterval(monitor)
+      }
+
+      const totalMs = Date.now() - startedAt
+      const summary = summarizeResults(results)
+      const heavyAfter = getHeavyTaskStats()
+      const ffAfter = getFfmpegQueueStats()
+      const memAfter = memorySnapshot()
+
+      const redEmptyFail = results.filter((r) => !r.ok && r.kind === 'red' && r.error === 'empty').length
+      const criticalFail = results.filter((r) => !r.ok && !(r.kind === 'red' && r.error === 'empty')).length
+      const criticalFailRate = summary.total > 0 ? criticalFail / summary.total : 1
+      const travou = summary.timeout > 0 || criticalFailRate >= 0.25
+      const status = travou ? 'SIM' : 'NAO'
+
+      const lines = [
+        '*BENCH COMANDO*',
+        `travou: ${status}`,
+        `preset=${cfg.preset}`,
+        `perfil=${cfg.profile} users=${cfg.users} rounds=${cfg.rounds} totalJobs=${summary.total}`,
+        `redMode solicitado=${cfg.redMode} efetivo=${redModeEffective}`,
+        `reencode=${cfg.reencode ? 'on' : 'off'}`,
+        `query="${cfg.query}"`,
+        '',
+        '[resultado geral]',
+        `ok=${summary.ok} fail=${summary.fail} timeout=${summary.timeout}`,
+        `fail_critico=${criticalFail} fail_red_empty=${redEmptyFail}`,
+        `tempo total=${totalMs}ms avg=${summary.avgMs.toFixed(0)}ms p95=${summary.p95.toFixed(0)}ms`,
+        '',
+        '[por tipo]',
+        kindLine('sticker', summary.byKind.sticker || []),
+        kindLine('red', summary.byKind.red || []),
+        '',
+        '[filas]',
+        `heavy antes: limit=${heavyBefore.limit} active=${heavyBefore.active} waiting=${heavyBefore.waiting}`,
+        `heavy depois: limit=${heavyAfter.limit} active=${heavyAfter.active} waiting=${heavyAfter.waiting}`,
+        `ffmpeg antes: limit=${ffBefore.limit} active=${ffBefore.active} waiting=${ffBefore.waiting}`,
+        `ffmpeg pico: active=${ffPeakActive} waiting=${ffPeakWaiting}`,
+        `ffmpeg depois: limit=${ffAfter.limit} active=${ffAfter.active} waiting=${ffAfter.waiting}`,
+        '',
+        '[memoria]',
+        `antes: rss=${mb(memBefore.rss)} heap=${mb(memBefore.heapUsed)}/${mb(memBefore.heapTotal)} host=${memBefore.hostPct}%`,
+        `depois: rss=${mb(memAfter.rss)} heap=${mb(memAfter.heapUsed)}/${mb(memAfter.heapTotal)} host=${memAfter.hostPct}%`,
+        '',
+        '[metodo melhor]',
+        '1) Para entrega rapida: .red <termo> (video mp4 com gifPlayback)',
+        '2) Para sticker sob carga: .s -lite e video <= 6s',
+        '3) Em pico: manter ffmpeg concorrencia=1',
+        '',
+        `uso: ${usedPrefix}testcomando [rapido|extremo|mix|sticker|red] [termo] [-users=4] [-rounds=1] [-dur=3] [-mode=video|gif|both] [-noreencode]`,
+      ]
+
+      await client.reply(m.chat, lines.join('\n'), m)
+      await m.react('\u2705').catch(() => {})
+    } finally {
+      activeBenchRun = null
+    }
   },
 }

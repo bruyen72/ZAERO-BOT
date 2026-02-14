@@ -58,7 +58,7 @@ export default {
       const author = marca.length > 1 ? marca[1] : texto2
       const mode = flags.hd ? 'hd' : 'lite'
 
-      const replyProcessing = async (text = '') => {
+      async function replyProcessing(text = '') {
         await m.react('\u23F3').catch(() => {})
         if (text) {
           await client.reply(m.chat, text, m).catch(() => {})
