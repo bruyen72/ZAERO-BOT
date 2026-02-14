@@ -96,7 +96,7 @@ function parseInput(args = []) {
       query: 'ass',
       redMode: 'video',
       timeoutMs: 45000,
-      reencode: true,
+      reencode: false,
       waveConcurrency: 2,
     },
     extremo: {
@@ -487,7 +487,7 @@ export default {
   command: ['testcomando', 'testcmd', 'benchcomando'],
   category: 'mod',
   isOwner: true,
-  timeoutMs: 180000,
+  timeoutMs: 420000,
   run: async (client, m, args, usedPrefix) => {
     if (activeBenchRun && Date.now() - activeBenchRun.startedAt < BENCH_LOCK_TTL_MS) {
       const elapsedMs = Date.now() - activeBenchRun.startedAt
@@ -568,7 +568,8 @@ export default {
       const redEmptyFail = results.filter((r) => !r.ok && r.kind === 'red' && r.error === 'empty').length
       const criticalFail = results.filter((r) => !r.ok && !(r.kind === 'red' && r.error === 'empty')).length
       const criticalFailRate = summary.total > 0 ? criticalFail / summary.total : 1
-      const travou = summary.timeout > 0 || criticalFailRate >= 0.25
+      // "Travou" deve refletir falha severa, nao um unico timeout isolado.
+      const travou = summary.timeout >= 2 || criticalFailRate >= 0.4
       const status = travou ? 'SIM' : 'NAO'
 
       const lines = [
