@@ -87,6 +87,18 @@ function parseInput(args = []) {
   }
 
   const PRESETS = {
+    prod: {
+      preset: 'prod',
+      profile: 'mix',
+      users: 4,
+      rounds: 1,
+      waveConcurrency: 1,
+      durationSec: 2,
+      query: 'ass',
+      redMode: 'video',
+      timeoutMs: 45000,
+      reencode: false,
+    },
     rapido: {
       preset: 'rapido',
       profile: 'mix',
@@ -607,7 +619,7 @@ export default {
         '2) Para sticker sob carga: .s -lite e video <= 6s',
         '3) Em pico: manter ffmpeg concorrencia=1',
         '',
-        `uso: ${usedPrefix}testcomando [rapido|extremo|mix|sticker|red] [termo] [-users=4] [-rounds=1] [-dur=3] [-mode=video|gif|both] [-wc=2] [-noreencode]`,
+        `uso: ${usedPrefix}testcomando [prod|rapido|extremo|mix|sticker|red] [termo] [-users=4] [-rounds=1] [-dur=3] [-mode=video|gif|both] [-wc=2] [-noreencode]`,
       ]
 
       await client.reply(m.chat, lines.join('\n'), m)
