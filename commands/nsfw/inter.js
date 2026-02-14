@@ -1,6 +1,7 @@
 import { resolveLidToRealJid } from '../../lib/utils.js'
 import { fetchNsfwMedia } from '../../lib/mediaFetcher.js'
 import { promises as fs } from 'fs'
+import { DARK_MSG } from '../../lib/system/heavyTaskManager.js'
 import {
   COMPRESS_THRESHOLD,
   MAX_DOWNLOAD_VIDEO_BYTES,
@@ -8,8 +9,12 @@ import {
   compressVideoBuffer,
   downloadVideoBuffer,
   getChatRedgifsHistory,
+  getChatRedgifsUrlHashHistory,
+  hashRedgifsUrl,
   isValidVideoBuffer,
+  normalizeId,
   registerSentRedgifsId,
+  registerSentRedgifsUrlHash,
   withChatNsfwQueue,
 } from '../../lib/nsfwShared.js'
 
@@ -78,6 +83,8 @@ const WA_GIF_VIDEO_FLAGS = {
   mimetype: 'video/mp4',
   ptv: false,
 }
+
+const SEARCH_MAX_ATTEMPTS = 4
 
 function buildRedgifsMessage(payload = {}) {
   return {
@@ -213,6 +220,9 @@ export default {
 
     const chatData = global.db?.data?.chats?.[m.chat] || {}
     const redgifsHistory = getChatRedgifsHistory(chatData)
+    const redgifsHashHistory = getChatRedgifsUrlHashHistory(chatData)
+    const attemptedIds = new Set(redgifsHistory.map((item) => normalizeId(item)).filter(Boolean))
+    const attemptedHashes = new Set(redgifsHashHistory.map((item) => normalizeId(item)).filter(Boolean))
     const currentCommand = Object.keys(alias).find((key) => alias[key].includes(command)) || command
     if (!captions[currentCommand]) return
     const mentionedJid = m.mentionedJid || []
@@ -244,31 +254,52 @@ export default {
     const caption = `*ZÆRØ BOT — ADULTO (18+)*\n\n${baseCaption}\n\n⚠️ *AVISO:* O conteúdo 18+ é de sua total responsabilidade. O bot não se responsabiliza pelo uso das mídias. Você é um adulto, use com consciência.`
 
     try {
-      await m.react('\u23F3')
+      await m.react('\u23F3').catch(async () => {
+        await m.reply(DARK_MSG.processing).catch(() => {})
+      })
 
       await withChatNsfwQueue(m.chat, async () => {
-        const mediaResult = await fetchNsfwMedia(currentCommand, null, {
-          allowedMediaTypes: ['video'],
-          source: 'redgifs',
-          allowStaticFallback: false,
-          uniqueIds: true,
-          excludeIds: redgifsHistory,
-          maxPages: 3,
-          perPage: 40,
-          nicheOverride: currentCommand,
-          strictQuery: true,
-          preferredMediaType: 'video',
-          optimizeVideos: true,
-          optimizeMaxSourceBytes: 100 * 1024 * 1024,
-        })
+        let mediaResult = null
+        let chosenId = ''
+        let chosenHash = ''
+
+        for (let attempt = 1; attempt <= SEARCH_MAX_ATTEMPTS; attempt += 1) {
+          const fetched = await fetchNsfwMedia(currentCommand, null, {
+            allowedMediaTypes: ['video'],
+            source: 'redgifs',
+            allowStaticFallback: false,
+            uniqueIds: true,
+            excludeIds: [...attemptedIds],
+            maxPages: 3,
+            perPage: 40,
+            nicheOverride: currentCommand,
+            strictQuery: true,
+            preferredMediaType: 'video',
+            optimizeVideos: true,
+            optimizeMaxSourceBytes: 100 * 1024 * 1024,
+          })
+
+          if (!fetched) continue
+          const currentId = normalizeId(fetched.id || '')
+          const currentHash = hashRedgifsUrl(fetched.url || fetched.pageUrl || '')
+
+          if ((currentId && attemptedIds.has(currentId)) || (currentHash && attemptedHashes.has(currentHash))) {
+            if (currentId) attemptedIds.add(currentId)
+            if (currentHash) attemptedHashes.add(currentHash)
+            continue
+          }
+
+          mediaResult = fetched
+          chosenId = currentId
+          chosenHash = currentHash
+          if (chosenId) attemptedIds.add(chosenId)
+          if (chosenHash) attemptedHashes.add(chosenHash)
+          break
+        }
 
         if (!mediaResult) {
           await m.react('\u274C')
-          return m.reply('> Fonte temporariamente indisponivel.\nTente novamente em alguns minutos.')
-        }
-
-        if (mediaResult.id) {
-          registerSentRedgifsId(chatData, mediaResult.id)
+          return m.reply('> Fonte temporariamente indisponivel ou sem midia nova.\nTente novamente em alguns minutos.')
         }
 
         m.reply('Otimizando video pro WhatsApp...').catch(() => {})
@@ -307,6 +338,9 @@ export default {
           videoBuffer = retryBuffer
         }
 
+        if (chosenId) registerSentRedgifsId(chatData, chosenId)
+        if (chosenHash) registerSentRedgifsUrlHash(chatData, chosenHash)
+
         await m.react('\u2705')
         console.log(`[NSFW] Comando ${command} ok. Tamanho: ${(videoBuffer.length / 1024 / 1024).toFixed(2)}MB`)
       })
@@ -314,9 +348,9 @@ export default {
       await m.react('\u274C')
       console.error(`[NSFW] Erro no comando ${command}:`, e)
       await m.reply(
-        `> Erro inesperado\n\n` +
+          `> Erro inesperado\n\n` +
           `Ocorreu um erro ao executar o comando *${usedPrefix + command}*.\n\n` +
-          `Detalhes tecnicos: ${e.message}\n\n` +
+          `Detalhes tecnicos: ${e.message || DARK_MSG.timeout}\n\n` +
           `Se o problema persistir, contate o suporte.`,
       )
     }

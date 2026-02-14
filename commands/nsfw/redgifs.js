@@ -1,5 +1,6 @@
 import { fetchMediaSafe, fetchNsfwMedia, resolveNsfwVideo } from '../../lib/mediaFetcher.js'
 import { promises as fs } from 'fs'
+import { DARK_MSG } from '../../lib/system/heavyTaskManager.js'
 import {
   COMPRESS_THRESHOLD,
   MAX_DOWNLOAD_VIDEO_BYTES,
@@ -7,9 +8,12 @@ import {
   downloadVideoBuffer,
   transcodeForWhatsapp,
   getChatRedgifsHistory,
+  getChatRedgifsUrlHashHistory,
+  hashRedgifsUrl,
   isValidVideoBuffer,
   normalizeId,
   registerSentRedgifsId,
+  registerSentRedgifsUrlHash,
   withChatNsfwQueue,
 } from '../../lib/nsfwShared.js'
 
@@ -131,6 +135,26 @@ function isLikelyRedgifsId(value = '') {
   return /^[a-z0-9]{12,64}$/.test(normalized)
 }
 
+function normalizeTagToken(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9_-]+/g, '')
+    .replace(/^-+|-+$/g, '')
+    .trim()
+}
+
+function parseTagList(value = '') {
+  return [...new Set(
+    String(value || '')
+      .split(',')
+      .map((item) => normalizeTagToken(item))
+      .filter(Boolean),
+  )]
+}
+
 function parseSearchInput(rawInput = '') {
   const chunks = String(rawInput || '')
     .split(/\s+/)
@@ -150,9 +174,27 @@ function parseSearchInput(rawInput = '') {
       continue
     }
 
-    if (normalized.startsWith('tags:') || normalized.startsWith('tag:') || normalized.startsWith('tags=')) {
+    if (
+      normalized.startsWith('tags:') ||
+      normalized.startsWith('tag:') ||
+      normalized.startsWith('tags=') ||
+      normalized.startsWith('tag=')
+    ) {
       const explicitTags = value.replace(/^[^:=]+[:=]/i, '').trim()
       if (explicitTags) tags = explicitTags
+      continue
+    }
+
+    if (
+      normalized.startsWith('search:') ||
+      normalized.startsWith('search=') ||
+      normalized.startsWith('buscar:') ||
+      normalized.startsWith('buscar=') ||
+      normalized.startsWith('busca:') ||
+      normalized.startsWith('busca=')
+    ) {
+      const explicitQuery = value.replace(/^[^:=]+[:=]/i, '').trim()
+      if (explicitQuery) queryParts.push(explicitQuery)
       continue
     }
 
@@ -160,15 +202,12 @@ function parseSearchInput(rawInput = '') {
   }
 
   let query = queryParts.join(' ').trim()
+  const parsedTags = parseTagList(tags)
   if (!query && tags) {
-    query = tags
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .join(' ')
+    query = parsedTags.join(' ')
   }
 
-  return { mode, tags, query }
+  return { mode, tags: parsedTags.join(','), query }
 }
 
 function allowedMediaTypesForMode(mode = 'video') {
@@ -502,14 +541,25 @@ export default {
 
     const chatData = ensureChatData(m.chat)
     const history = getChatRedgifsHistory(chatData)
+    const hashHistory = getChatRedgifsUrlHashHistory(chatData)
     const attemptedIds = new Set(history.map((item) => normalizeId(item)).filter(Boolean))
+    const attemptedHashes = new Set(hashHistory.map((item) => normalizeId(item)).filter(Boolean))
 
     try {
-      await m.react('\u23F3')
+      await m.react('\u23F3').catch(async () => {
+        await m.reply(DARK_MSG.processing).catch(() => {})
+      })
 
       if (isRedgifsUrl(queryInput)) {
         await withChatNsfwQueue(m.chat, async () => {
           const mediaResult = await resolveDirectInput(queryInput, { preferredMediaType })
+          const directId = normalizeId(mediaResult.id || '')
+          const directHash = hashRedgifsUrl(mediaResult.url || mediaResult.pageUrl || queryInput)
+          if ((directId && attemptedIds.has(directId)) || (directHash && attemptedHashes.has(directHash))) {
+            await m.react('\u274C')
+            return m.reply('Esse conteudo ja foi enviado recentemente. Envie outro link.')
+          }
+
           const safetyCheck = checkSafetyBlocked(mediaResult)
           if (safetyCheck.blocked) {
             await m.react('\u26D4')
@@ -523,7 +573,8 @@ export default {
             return m.reply('Erro ao enviar esta midia. Tente outro link.')
           }
 
-          if (mediaResult.id) registerSentRedgifsId(chatData, mediaResult.id)
+          if (directId) registerSentRedgifsId(chatData, directId)
+          if (directHash) registerSentRedgifsUrlHash(chatData, directHash)
           await m.react('\u2705')
         })
         return
@@ -549,8 +600,11 @@ export default {
           if (!mediaResult) break
 
           const currentId = normalizeId(mediaResult.id || '')
+          const currentHash = hashRedgifsUrl(mediaResult.url || mediaResult.pageUrl || '')
           if (currentId && attemptedIds.has(currentId)) continue
+          if (currentHash && attemptedHashes.has(currentHash)) continue
           if (currentId) attemptedIds.add(currentId)
+          if (currentHash) attemptedHashes.add(currentHash)
 
           const safetyCheck = checkSafetyBlocked(mediaResult)
           if (safetyCheck.blocked) {
@@ -565,6 +619,7 @@ export default {
             if (!sentThisAttempt) continue
 
             if (currentId) registerSentRedgifsId(chatData, currentId)
+            if (currentHash) registerSentRedgifsUrlHash(chatData, currentHash)
             sent = true
             break
           } catch {
@@ -574,13 +629,13 @@ export default {
 
         if (!sent) {
           await m.react('\u274C')
-          return m.reply('Nenhuma midia valida encontrada para esse termo no momento.')
+          return m.reply('Nenhuma midia nova/valida encontrada para esse termo no momento.')
         }
         await m.react('\u2705')
       })
     } catch (error) {
       await m.react('\u274C')
-      await m.reply(`> Erro ao executar *${usedPrefix + command}*.\n> [Erro: *${error.message}*]`)
+      await m.reply(`> Erro ao executar *${usedPrefix + command}*.\n> [Erro: *${error.message || DARK_MSG.timeout}*]`)
     }
   },
 }
