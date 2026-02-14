@@ -796,11 +796,11 @@ app.post('/api/qr', requireAuth, apiLimiter, async (req, res) => {
       })
     }
 
-    // Aguardar QR code ser gerado (máximo 10 segundos)
+    // Aguardar QR code ser gerado (máximo 30 segundos)
     const qrPromise = new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error('Timeout ao gerar QR Code'))
-      }, 10000)
+      }, 30000)
 
       const checkQR = setInterval(() => {
         if (currentQR) {
