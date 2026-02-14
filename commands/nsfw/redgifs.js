@@ -237,10 +237,10 @@ async function fetchUniqueSearchResult(query, excludeIds = []) {
 }
 
 export default {
-  command: ['redgifs', 'redgif', 'rgifs', 'redgifts'],
+  command: ['redgifs', 'redgif', 'rgifs', 'redgifts', 'red'],
   category: 'nsfw',
   run: async (client, m, args, usedPrefix, command) => {
-    if (!globalThis.db?.data?.chats?.[m.chat]?.nsfw) {
+    if (m.isGroup && !globalThis.db?.data?.chats?.[m.chat]?.nsfw) {
       return m.reply(`O conteudo *NSFW* esta desabilitado neste grupo.\n\nUm *administrador* pode habilitar com:\n>> *${usedPrefix}nsfw on*`)
     }
 
