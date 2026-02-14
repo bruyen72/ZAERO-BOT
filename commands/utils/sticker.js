@@ -110,50 +110,63 @@ export default {
         const outWebp = tmp(`anim-${Date.now()}.webp`)
         cleanupPaths.push(outWebp)
 
-        const fpsTries = mode === 'hd' ? [20, 18, 15] : [15, 12, 10]
-        const qTries = mode === 'hd' ? [60, 52, 46, 40] : [42, 36, 30, 26]
-        const scales = [512, 384]
+        // Presets lineares otimizados (Substitui os 3 loops aninhados que travavam o bot)
+        const presets = mode === 'hd' 
+          ? [
+              { fps: 18, scale: 512, q: 55, compression: 4 },
+              { fps: 15, scale: 512, q: 45, compression: 4 },
+              { fps: 12, scale: 448, q: 40, compression: 3 },
+              { fps: 10, scale: 384, q: 35, compression: 2 }
+            ]
+          : [
+              { fps: 15, scale: 512, q: 45, compression: 4 },
+              { fps: 12, scale: 448, q: 38, compression: 4 },
+              { fps: 10, scale: 384, q: 30, compression: 3 },
+              { fps: 8, scale: 320, q: 25, compression: 2 }
+            ]
 
         let success = false
-        for (const scale of scales) {
-          for (const fps of fpsTries) {
-            for (const q of qTries) {
-              const vf = [
-                `fps=${fps}`,
-                `scale=${scale}:${scale}:force_original_aspect_ratio=decrease`,
-                'pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000',
-                'format=rgba'
-              ].join(',')
+        for (let i = 0; i < presets.length; i++) {
+          const p = presets[i]
+          const vf = [
+            `fps=${p.fps}`,
+            `scale=${p.scale}:${p.scale}:force_original_aspect_ratio=decrease:flags=lanczos`,
+            'pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000',
+            'format=rgba'
+          ].join(',')
 
-              try {
-                await runFfmpeg(
-                  [
-                    '-y', '-t', String(finalDur), '-i', inFile,
-                    '-vf', vf, '-an', '-vsync', '0', '-vcodec', 'libwebp',
-                    '-loop', '0', '-preset', 'default',
-                    '-compression_level', '6', '-q:v', String(q),
-                    outWebp
-                  ],
-                  { timeoutMs: FFMPEG_TIMEOUT_MS }
-                )
+          console.log(`[STICKER] Tentativa ${i + 1}/${presets.length} (${mode}) fps=${p.fps} scale=${p.scale} c=${p.compression}`)
 
-                const size = fs.statSync(outWebp).size
-                if (size <= LIMIT_ANIM_BYTES) {
-                  success = true
-                  break
-                }
-              } catch (err) {
-                if (err.code === 'FFMPEG_TIMEOUT') throw err
-                continue
+          try {
+            await runFfmpeg(
+              [
+                '-y', '-t', String(finalDur), '-i', inFile,
+                '-vf', vf, '-an', '-vsync', '0', '-vcodec', 'libwebp',
+                '-loop', '0', '-preset', 'default',
+                '-compression_level', String(p.compression), '-q:v', String(p.q),
+                outWebp
+              ],
+              { 
+                timeoutMs: FFMPEG_TIMEOUT_MS,
+                queueWaitTimeoutMs: 60000
               }
+            )
+
+            const size = fs.statSync(outWebp).size
+            if (size <= LIMIT_ANIM_BYTES) {
+              success = true
+              break
             }
-            if (success) break
+          } catch (err) {
+            console.warn(`[STICKER] Falha na tentativa ${i + 1}: ${err.message}`)
+            if (err.code === 'FFMPEG_TIMEOUT' || err.code === 'FFMPEG_QUEUE_FULL') throw err
+            continue
           }
-          if (success) break
         }
 
         if (!success && fs.existsSync(outWebp)) {
-          if (fs.statSync(outWebp).size > LIMIT_ANIM_BYTES + (50 * 1024)) {
+          const size = fs.statSync(outWebp).size
+          if (size > LIMIT_ANIM_BYTES + (100 * 1024)) {
             throw new Error(MSG.heavy)
           }
         }
@@ -167,18 +180,23 @@ export default {
         cleanupPaths.push(outWebp)
         const vf = buildVF(picked)
 
-        const qTries = mode === 'hd' ? [80, 70, 60] : [70, 60, 50, 40]
+        const qTries = mode === 'hd' ? [80, 65, 50] : [70, 55, 40]
         for (const q of qTries) {
-          await runFfmpeg(
-            [
-              '-y', '-i', inFile, '-vf', vf, '-an', '-vcodec', 'libwebp',
-              '-preset', 'picture', '-compression_level', '6', '-q:v', String(q),
-              outWebp
-            ],
-            { timeoutMs: FFMPEG_TIMEOUT_MS }
-          )
+          try {
+            await runFfmpeg(
+              [
+                '-y', '-i', inFile, '-vf', vf, '-an', '-vcodec', 'libwebp',
+                '-preset', 'picture', '-compression_level', '4', '-q:v', String(q),
+                outWebp
+              ],
+              { timeoutMs: FFMPEG_TIMEOUT_MS }
+            )
 
-          if (fs.statSync(outWebp).size <= LIMIT_IMAGE_BYTES) break
+            if (fs.statSync(outWebp).size <= LIMIT_IMAGE_BYTES) break
+          } catch (err) {
+            console.warn(`[STICKER-IMG] Falha q=${q}: ${err.message}`)
+            continue
+          }
         }
 
         await sendSticker(outWebp, pack, author, cleanupPaths, client, m)
