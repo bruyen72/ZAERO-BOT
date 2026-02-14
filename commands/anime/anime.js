@@ -1,10 +1,10 @@
 import fetch from 'node-fetch'
 
 export default {
-  command: ['anime', 'anisearch', 'mal'],
+  command: ['anime', 'anisearch'],
   category: 'anime',
   info: {
-    desc: 'Busca informações detalhadas de um anime. Ex: .anime solo leveling'
+    desc: 'Busca informações detalhadas de um anime via Jikan. Ex: .anime solo leveling'
   },
   run: async (client, m, args, usedPrefix) => {
     const query = args.join(' ').trim()
@@ -21,7 +21,7 @@ export default {
 
       if (!json.data || json.data.length === 0) {
         await m.react('❌').catch(() => {})
-        return m.reply(`🏮 *ERRO* 🏮\n\nNão encontrei nenhum resultado para: "${query}"`)
+        return m.reply(`🏮 *ZAERO ANIME* 🏮\n\nNão encontrei nenhum resultado para: "${query}"`)
       }
 
       const anime = json.data[0]
@@ -54,7 +54,7 @@ export default {
 📝 *𝙎𝙄𝙉𝙊𝙋𝙎𝙀:*
 ${anime.synopsis ? anime.synopsis.substring(0, 500) + '...' : 'Sem sinopse disponível.'}
 
-🔗 *Link MyAnimeList:*
+🔗 *Link:*
 ${anime.url}
 `.trim()
 
@@ -67,9 +67,9 @@ ${anime.url}
       }, { quoted: m })
 
     } catch (error) {
-      console.error(`[ANIME-PRO] Erro: ${error.message}`)
+      console.error(`[JIKAN-SEARCH] Erro: ${error.message}`)
       await m.react('❌').catch(() => {})
-      m.reply('🏮 *ERRO NO SISTEMA* 🏮\n\nOcorreu uma falha ao processar sua busca. Tente novamente mais tarde.')
+      m.reply('🏮 *ZAERO ANIME* 🏮\n\nOcorreu uma falha ao processar sua busca no Jikan.')
     }
   }
 }
