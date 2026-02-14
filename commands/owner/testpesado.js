@@ -65,6 +65,12 @@ function parseInput(args = []) {
   return options
 }
 
+function resolveEffectiveMode(mode = 'video') {
+  // RedGifs responde melhor em MP4; gif puro costuma reduzir disponibilidade.
+  if (mode === 'gif') return 'both'
+  return mode
+}
+
 function allowedMediaTypes(mode = 'video') {
   if (mode === 'gif') return ['gif']
   if (mode === 'both') return ['video', 'gif']
@@ -166,6 +172,9 @@ export default {
   isOwner: true,
   run: async (client, m, args, usedPrefix) => {
     const opts = parseInput(args)
+    const requestedMode = opts.mode
+    const effectiveMode = resolveEffectiveMode(requestedMode)
+    const redAllowedMediaTypes = allowedMediaTypes(effectiveMode)
     const ffmpegPath = resolveFfmpegPath()
     const heavyBefore = getHeavyTaskStats()
     const ffBefore = getFfmpegQueueStats()
@@ -174,7 +183,7 @@ export default {
     await m.react('\u23F3').catch(() => {})
     await client.reply(
       m.chat,
-      `Iniciando teste pesado...\njobs=${opts.jobs} dur=${opts.durationSec}s modo=${opts.mode} red=${opts.runRedTest ? 'on' : 'off'}`,
+      `Iniciando teste pesado...\njobs=${opts.jobs} dur=${opts.durationSec}s modo=${requestedMode} (efetivo=${effectiveMode}) red=${opts.runRedTest ? 'on' : 'off'}`,
       m,
     )
 
@@ -188,7 +197,7 @@ export default {
         const startedAt = Date.now()
         try {
           const media = await fetchNsfwMedia(opts.query, null, {
-            allowedMediaTypes: allowedMediaTypes(opts.mode),
+            allowedMediaTypes: redAllowedMediaTypes,
             source: 'redgifs',
             allowStaticFallback: false,
             uniqueIds: true,
@@ -231,12 +240,13 @@ export default {
       '',
       '[redgifs real]',
       redResult.status === 'ok'
-        ? `status=ok tempo=${redResult.elapsedMs}ms type=${redResult.mediaType} size=${mb(redResult.sizeBytes)} query="${opts.query}" modo=${opts.mode}`
+        ? `status=ok tempo=${redResult.elapsedMs}ms type=${redResult.mediaType} size=${mb(redResult.sizeBytes)} query="${opts.query}" modo=${requestedMode} (efetivo=${effectiveMode})`
         : redResult.status === 'skipped'
           ? `status=skipped motivo=${redResult.reason}`
           : redResult.status === 'empty'
             ? `status=empty tempo=${redResult.elapsedMs}ms`
             : `status=error tempo=${redResult.elapsedMs || 0}ms erro=${redResult.error || 'desconhecido'}`,
+      requestedMode !== effectiveMode ? 'nota: "gif" foi ajustado para "both" para maior disponibilidade.' : '',
       '',
       '[filas]',
       `heavy antes: limit=${heavyBefore.limit} active=${heavyBefore.active} waiting=${heavyBefore.waiting}`,

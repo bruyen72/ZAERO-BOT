@@ -96,6 +96,12 @@ function parseInput(args = []) {
   return { mode, sample, query }
 }
 
+function resolveEffectiveMode(mode = 'video') {
+  // RedGifs entrega melhor em MP4; pedir gif puro tende a retornar vazio.
+  if (mode === 'gif') return 'both'
+  return mode
+}
+
 function allowedTypesForMode(mode) {
   if (mode === 'gif') return ['gif']
   if (mode === 'both') return ['video', 'gif']
@@ -165,11 +171,14 @@ export default {
     }
 
     const { mode, sample, query } = parseInput(args)
-    const allowedMediaTypes = allowedTypesForMode(mode)
+    const effectiveMode = resolveEffectiveMode(mode)
+    const allowedMediaTypes = allowedTypesForMode(effectiveMode)
     const niche = inferNiche(query)
 
     await m.react('\u23F3').catch(() => {})
-    console.log(`[TestRed] inicio query="${query}" mode=${mode} sample=${sample} niche=${niche}`)
+    console.log(
+      `[TestRed] inicio query="${query}" mode=${mode} effectiveMode=${effectiveMode} sample=${sample} niche=${niche}`,
+    )
 
     const startedAt = Date.now()
     const report = {
@@ -224,8 +233,8 @@ export default {
       console.error(`[TestRed] metodo C erro: ${error.message}`)
     }
 
-    const scoreA = scoreByMode(report.methodA.stats || {}, mode)
-    const scoreB = scoreByMode(report.methodB.stats || {}, mode)
+    const scoreA = scoreByMode(report.methodA.stats || {}, effectiveMode)
+    const scoreB = scoreByMode(report.methodB.stats || {}, effectiveMode)
     const bestDiscovery = scoreA >= scoreB ? 'A(search)' : 'B(niche)'
     const totalMs = Date.now() - startedAt
     const media = report.methodC.media
@@ -233,8 +242,9 @@ export default {
     const lines = [
       '*TESTE REDGIFS*',
       `query: ${query}`,
-      `modo: ${mode} | niche inferido: ${niche}`,
+      `modo solicitado: ${mode} | modo efetivo: ${effectiveMode} | niche inferido: ${niche}`,
       `tipos alvo: ${allowedMediaTypes.join(', ')}`,
+      mode !== effectiveMode ? 'nota: "gif" foi ajustado para "both" para evitar vazio/latencia.' : '',
       '',
       report.methodA.error
         ? `A(search): erro=${report.methodA.error}`
@@ -246,7 +256,7 @@ export default {
         ? `C(fetch real): erro=${report.methodC.error}`
         : `C(fetch real): ${formatMs(report.methodC.elapsed)} | ok=${Boolean(media)} | type=${media?.mediaType || 'none'} | size=${(((media?.size || 0) / 1024 / 1024) || 0).toFixed(2)}MB`,
       '',
-      `melhor para descoberta (${mode}): ${bestDiscovery}`,
+      `melhor para descoberta (${effectiveMode}): ${bestDiscovery}`,
       `melhor para comando final: C(fetch real)`,
       `tempo total: ${formatMs(totalMs)}`,
       '',
