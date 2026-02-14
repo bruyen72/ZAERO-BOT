@@ -11,6 +11,12 @@ const MODE_ALIASES = {
 }
 
 const QUERY_TO_NICHE = {
+  ass: 'big-ass',
+  bunda: 'big-ass',
+  bunduda: 'big-ass',
+  bigass: 'big-ass',
+  'big-ass': 'big-ass',
+  pawg: 'pawg',
   blowjob: 'blowjob',
   bj: 'blowjob',
   mamada: 'blowjob',
@@ -44,10 +50,23 @@ function normalizeText(value = '') {
 
 function inferNiche(query = '') {
   const normalized = normalizeText(query).replace(/\s+/g, '-')
-  if (QUERY_TO_NICHE[normalized]) return QUERY_TO_NICHE[normalized]
   const compact = normalized.replace(/-/g, '')
+  if (QUERY_TO_NICHE[normalized]) return QUERY_TO_NICHE[normalized]
   if (QUERY_TO_NICHE[compact]) return QUERY_TO_NICHE[compact]
-  return normalized || 'blowjob'
+
+  const tokens = normalized.split('-').filter(Boolean)
+  for (const token of tokens) {
+    if (QUERY_TO_NICHE[token]) return QUERY_TO_NICHE[token]
+  }
+
+  // Heuristicas simples para termos livres comuns.
+  if (tokens.includes('ass')) return 'big-ass'
+  if (tokens.includes('girl') && tokens.includes('ass')) return 'big-ass'
+  if (tokens.includes('cum')) return 'cumshot'
+  if (tokens.includes('blowjob') || tokens.includes('bj')) return 'blowjob'
+  if (tokens.includes('anal')) return 'anal'
+
+  return 'blowjob'
 }
 
 function parseInput(args = []) {
