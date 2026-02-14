@@ -57,6 +57,12 @@ function cleanText(value = '', fallback = 'Sem titulo') {
   return normalized || fallback
 }
 
+function isTimeoutLike(error) {
+  const code = String(error?.code || '')
+  if (code === 'FFMPEG_TIMEOUT' || code === 'FFMPEG_QUEUE_TIMEOUT' || code === 'BENCH_TIMEOUT') return true
+  return /timeout/i.test(String(error?.message || ''))
+}
+
 function ensureChatData(chatId) {
   if (!globalThis.db?.data) return {}
   if (!globalThis.db.data.chats) globalThis.db.data.chats = {}
@@ -157,8 +163,16 @@ async function sendByUrl(client, m, url, caption, logLabel = 'redgifs-url', head
     throw new Error('Download retornou buffer de video invalido')
   }
 
-  const normalized = await normalizeForWhatsapp(downloaded, logLabel)
-  return sendTranscodedBuffer(client, m, normalized, caption)
+  try {
+    const normalized = await normalizeForWhatsapp(downloaded, logLabel)
+    return sendTranscodedBuffer(client, m, normalized, caption)
+  } catch (error) {
+    if (downloaded.length <= MAX_WA_VIDEO_BYTES && isTimeoutLike(error)) {
+      console.warn(`[RedGifs] ${logLabel}: timeout no reencode, enviando buffer original como fallback rapido.`)
+      return sendTranscodedBuffer(client, m, downloaded, caption)
+    }
+    throw error
+  }
 }
 
 async function sendResultProcessed(client, m, mediaResult, caption, logLabel = 'redgifs') {
@@ -182,8 +196,13 @@ async function sendResultProcessed(client, m, mediaResult, caption, logLabel = '
     normalized = await normalizeForWhatsapp(videoBuffer, logLabel)
   } catch (error) {
     console.error(`[RedGifs] ${logLabel}: falha ao normalizar buffer local (${error.message})`)
-    if (!fallbackUrl) throw error
-    return sendByUrl(client, m, fallbackUrl, caption, `${logLabel}:fallback`, fallbackHeaders)
+    if (videoBuffer.length <= MAX_WA_VIDEO_BYTES && isTimeoutLike(error)) {
+      console.warn(`[RedGifs] ${logLabel}: fallback rapido com buffer local sem reencode.`)
+      normalized = videoBuffer
+    } else {
+      if (!fallbackUrl) throw error
+      return sendByUrl(client, m, fallbackUrl, caption, `${logLabel}:fallback`, fallbackHeaders)
+    }
   }
 
   try {

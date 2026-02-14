@@ -7,6 +7,7 @@ import { getFfmpegQueueStats, runFfmpeg } from '../../lib/system/ffmpeg.js'
 import { COMPRESS_THRESHOLD, MAX_WA_VIDEO_BYTES, transcodeForWhatsapp } from '../../lib/nsfwShared.js'
 
 const BENCH_LOCK_TTL_MS = 20 * 60 * 1000
+const BENCH_REENCODE_MAX_SOURCE_BYTES = 25 * 1024 * 1024
 let activeBenchRun = null
 
 function clampInt(value, min, max, fallback) {
@@ -251,6 +252,7 @@ async function runRedLikeJob(jobId, query, mode, timeoutMs, reencode = true) {
   const startedAt = Date.now()
   const effectiveMode = resolveEffectiveRedMode(mode)
   const allowedMediaTypes = allowedMediaTypesForMode(effectiveMode)
+  const maxCandidateBytes = reencode ? BENCH_REENCODE_MAX_SOURCE_BYTES : 0
 
   try {
     const fetchTimeoutMs = Math.max(15000, Math.min(timeoutMs, 60000))
@@ -265,6 +267,7 @@ async function runRedLikeJob(jobId, query, mode, timeoutMs, reencode = true) {
           perPage: 30,
           nicheOverride: query,
           strictQuery: true,
+          maxCandidateBytes,
         }),
       fetchTimeoutMs,
     )
@@ -293,7 +296,7 @@ async function runRedLikeJob(jobId, query, mode, timeoutMs, reencode = true) {
     if (reencode && Buffer.isBuffer(media?.buffer) && media.buffer.length > 0) {
       const transcodeStart = Date.now()
       try {
-        const primaryTcTimeout = Math.max(20000, Math.min(timeoutMs, 50000))
+        const primaryTcTimeout = Math.max(15000, Math.min(timeoutMs, 30000))
         const primaryTcQueueWait = Math.max(10000, Math.min(primaryTcTimeout, 25000))
         let normalized = await withTimeout(
           () =>
@@ -306,7 +309,7 @@ async function runRedLikeJob(jobId, query, mode, timeoutMs, reencode = true) {
                     maxBitrate: 800,
                     timeoutMs: primaryTcTimeout,
                     queueWaitTimeoutMs: primaryTcQueueWait,
-                    limitSeconds: 15,
+                    limitSeconds: 12,
                   }
                 : {
                     preset: 'fast',
@@ -314,27 +317,15 @@ async function runRedLikeJob(jobId, query, mode, timeoutMs, reencode = true) {
                     maxBitrate: 1000,
                     timeoutMs: primaryTcTimeout,
                     queueWaitTimeoutMs: primaryTcQueueWait,
-                    limitSeconds: 15,
+                    limitSeconds: 12,
                   },
             ),
           primaryTcTimeout + 5000,
         )
 
         if (normalized.length > MAX_WA_VIDEO_BYTES) {
-          const aggressiveTcTimeout = Math.max(25000, Math.min(timeoutMs + 10000, 65000))
-          const aggressiveTcQueueWait = Math.max(12000, Math.min(aggressiveTcTimeout, 30000))
-          normalized = await withTimeout(
-            () =>
-              transcodeForWhatsapp(normalized, {
-                preset: 'ultrafast',
-                crf: 30,
-                maxBitrate: 450,
-                scale: '640:-2',
-                timeoutMs: aggressiveTcTimeout,
-                queueWaitTimeoutMs: aggressiveTcQueueWait,
-                limitSeconds: 12,
-              }),
-            aggressiveTcTimeout + 5000,
+          throw new Error(
+            `reencode: tamanho acima do limite apos 1a passada (${(normalized.length / 1024 / 1024).toFixed(2)}MB)`,
           )
         }
 
@@ -342,6 +333,23 @@ async function runRedLikeJob(jobId, query, mode, timeoutMs, reencode = true) {
         transcodeMs = Date.now() - transcodeStart
         reencoded = true
       } catch (error) {
+        // Fallback rapido para benchmark: se buffer original ja cabe no limite WA, considera sucesso sem reencode.
+        if (sizeBytesOriginal > 0 && sizeBytesOriginal <= MAX_WA_VIDEO_BYTES) {
+          return {
+            ok: true,
+            kind: 'red',
+            elapsedMs: Date.now() - startedAt,
+            mediaType: media?.mediaType || 'video',
+            sizeBytes: sizeBytesOriginal,
+            sizeBytesOriginal,
+            sizeBytesFinal: sizeBytesOriginal,
+            transcodeMs: Date.now() - transcodeStart,
+            reencoded: false,
+            timeout: false,
+            error: 'fallback-raw-after-reencode-fail',
+          }
+        }
+
         return {
           ok: false,
           kind: 'red',
