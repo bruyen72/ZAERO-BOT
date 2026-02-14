@@ -1,75 +1,61 @@
 import fetch from 'node-fetch'
+import translate from '@vitalets/google-translate-api'
 
 export default {
   command: ['anime', 'anisearch'],
   category: 'anime',
   info: {
-    desc: 'Busca informações detalhadas de um anime via Jikan. Ex: .anime solo leveling'
+    desc: 'Info rápida de anime no estilo ZÆRØ.'
   },
   run: async (client, m, args, usedPrefix) => {
     const query = args.join(' ').trim()
-    
-    if (!query) {
-      return m.reply(`🏮 *ZAERO ANIME* 🏮\n\nPor favor, digite o nome de um anime.\nEx: *${usedPrefix}anime naruto*`)
-    }
+    if (!query) return m.reply(`🏮 *ZÆRØ ANIME* 🏮\n\nQual anime deseja buscar?`)
 
-    await m.react('🌸').catch(() => {})
+    await m.react('✨').catch(() => {})
 
     try {
       const response = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&limit=1`)
       const json = await response.json()
 
-      if (!json.data || json.data.length === 0) {
+      if (!json.data?.[0]) {
         await m.react('❌').catch(() => {})
-        return m.reply(`🏮 *ZAERO ANIME* 🏮\n\nNão encontrei nenhum resultado para: "${query}"`)
+        return m.reply(`🏮 *ZÆRØ* | Anime não encontrado.`)
       }
 
       const anime = json.data[0]
       
-      // Tradução de Status
-      const statusMap = {
-        'Finished Airing': 'Finalizado ✅',
-        'Currently Airing': 'Em Lançamento 📡',
-        'Not yet aired': 'Ainda não lançado ⏳'
+      // Tradução ultra-curta
+      let synopsisPt = 'Sem sinopse.'
+      if (anime.synopsis) {
+        try {
+          const tr = await translate(anime.synopsis, { to: 'pt' })
+          synopsisPt = tr.text.length > 180 ? tr.text.substring(0, 180) + '...' : tr.text
+        } catch {
+          synopsisPt = anime.synopsis.substring(0, 180) + '...'
+        }
       }
 
-      // Mapear Gêneros
-      const genres = anime.genres.map(g => g.name).join(', ')
+      const text = `
+⛩️ *${anime.title.toUpperCase()}*
 
-      const infoText = `
-┏━━━━━━ ✨ *𝘼𝙉𝙄𝙈𝙀 𝙄𝙉𝙁𝙊* ✨ ━━━━━━┓
-┃
-┃ 🏷️ *Título:* ${anime.title}
-┃ 🇯🇵 *Japonês:* ${anime.title_japanese || 'N/A'}
-┃ ⭐ *Nota:* ${anime.score || 'Sem nota'}
-┃ 🎞️ *Tipo:* ${anime.type || 'N/A'}
-┃ 📺 *Episódios:* ${anime.episodes || 'Desconhecido'}
-┃ 📊 *Status:* ${statusMap[anime.status] || anime.status}
-┃ 📅 *Temporada:* ${anime.season ? anime.season.toUpperCase() : ''} ${anime.year || ''}
-┃ 🔞 *Classif:* ${anime.rating || 'N/A'}
-┃ 🧬 *Gêneros:* ${genres || 'N/A'}
-┃
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+⭐ *NOTA:* ${anime.score || '7.0'}
+📺 *EPS:* ${anime.episodes || '?'}
+📡 *STATUS:* ${anime.status === 'Finished Airing' ? 'Finalizado' : 'Em lançamento'}
 
-📝 *𝙎𝙄𝙉𝙊𝙋𝙎𝙀:*
-${anime.synopsis ? anime.synopsis.substring(0, 500) + '...' : 'Sem sinopse disponível.'}
+📝 ${synopsisPt}
 
-🔗 *Link:*
-${anime.url}
+✨ *𝙕Æ𝙍Ø 𝘼𝙉𝙄𝙈𝙀* ✨
 `.trim()
 
       await m.react('✅').catch(() => {})
 
-      // Envia a imagem com o texto formatado
       await client.sendMessage(m.chat, {
         image: { url: anime.images.jpg.large_image_url },
-        caption: infoText
+        caption: text
       }, { quoted: m })
 
     } catch (error) {
-      console.error(`[JIKAN-SEARCH] Erro: ${error.message}`)
-      await m.react('❌').catch(() => {})
-      m.reply('🏮 *ZAERO ANIME* 🏮\n\nOcorreu uma falha ao processar sua busca no Jikan.')
+      m.reply('🏮 *ZÆRØ* | Erro na conexão.')
     }
   }
 }
