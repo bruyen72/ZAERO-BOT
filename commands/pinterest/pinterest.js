@@ -9,7 +9,7 @@ import {
 } from './dedupeCache.js'
 
 const MAX_REQUESTED_IMAGES = 7
-const COMMAND_INTERVAL_MS = 2800
+const COMMAND_INTERVAL_MS = 1800
 
 let nextPinCommandAt = 0
 let pinCommandQueue = Promise.resolve()
@@ -146,7 +146,7 @@ function takeReplayCandidates(pins, targetCount, matchedQuery, localPinSet, loca
 }
 
 export default {
-  command: ['pin', 'pinlink'],
+  command: ['pin', 'pinlink', 'pinterest'],
   category: 'downloads',
   run: async (client, m, args) => {
     const { quantity, query } = parseArgs(args)
@@ -165,16 +165,19 @@ export default {
       const requireAuth = String(process.env.PINTEREST_REQUIRE_AUTH || '').trim() === '1'
       const termKey = normalizeTermKey(query)
       const queryFallbacks = buildQueryFallbacks(query)
+      if (!queryFallbacks.some((item) => item.toLowerCase() === query.toLowerCase())) {
+        queryFallbacks.push(query)
+      }
 
       const localPinIds = new Set()
       const localImgHashes = new Set()
       const candidatePool = []
 
-      const queryCount = Math.max(quantity * 6, 12)
+      const queryCount = Math.max(quantity * 2, 6)
       for (const currentQuery of queryFallbacks) {
         const pins = await searchPinterestPins(currentQuery, {
-          maxResults: Math.max(quantity * 14, 40),
-          maxPages: 2,
+          maxResults: Math.max(quantity * 8, 24),
+          maxPages: 1,
           requireAuth
         })
 
@@ -195,7 +198,7 @@ export default {
       if (candidatePool.length === 0) {
         for (const currentQuery of queryFallbacks) {
           const pins = await searchPinterestPins(currentQuery, {
-            maxResults: Math.max(quantity * 8, 20),
+            maxResults: Math.max(quantity * 6, 12),
             maxPages: 1,
             requireAuth
           })
@@ -203,7 +206,7 @@ export default {
 
           const replay = takeReplayCandidates(
             pins,
-            Math.max(quantity * 4, 8),
+            Math.max(quantity * 2, 4),
             currentQuery,
             localPinIds,
             localImgHashes

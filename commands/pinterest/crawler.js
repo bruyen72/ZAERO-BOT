@@ -202,6 +202,61 @@ function decodeHtmlEntities(text) {
     .replace(/&gt;/gi, '>')
 }
 
+function parseBingCardMetadata(rawAttribute) {
+  const decoded = decodeHtmlEntities(rawAttribute)
+  if (!decoded || !decoded.includes('"murl"')) return null
+  try {
+    return JSON.parse(decoded)
+  } catch (_) {
+    return null
+  }
+}
+
+async function collectPinimgUrlsFromBing(queryText, maxUrls = 120) {
+  const query = String(queryText || '').trim()
+  if (!query) return []
+
+  const searchQueries = [
+    `${query} pinterest`,
+    `${query} site:pinterest.com`
+  ]
+  const collected = []
+  const seen = new Set()
+
+  for (const item of searchQueries) {
+    const url = `https://www.bing.com/images/search?q=${encodeURIComponent(item)}`
+    let html = ''
+    try {
+      const response = await requestWithRetry(url, {
+        headers: {
+          ...DEFAULT_HEADERS,
+          accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        },
+        redirect: 'follow'
+      })
+      if (!response.ok) continue
+      html = await response.text()
+    } catch (_) {
+      continue
+    }
+
+    const attrMatches = [...html.matchAll(/\sm="([^"]+)"/gi)]
+    for (const attrMatch of attrMatches) {
+      const metadata = parseBingCardMetadata(attrMatch[1])
+      if (!metadata || typeof metadata.murl !== 'string') continue
+      const normalized = normalizePinimgUrl(metadata.murl)
+      if (!normalized || isKnownBadPinimgUrl(normalized) || seen.has(normalized)) continue
+      seen.add(normalized)
+      collected.push(normalized)
+      if (collected.length >= maxUrls) break
+    }
+
+    if (collected.length >= maxUrls) break
+  }
+
+  return collected.sort((left, right) => scorePinimgUrl(right) - scorePinimgUrl(left))
+}
+
 function normalizePinimgUrl(input) {
   const cleaned = cleanupEscapedUrl(input).replace(/[)\]}>,]+$/, '')
   if (!cleaned) return ''
@@ -701,22 +756,14 @@ async function fetchText(url, cookieJar) {
   }
 }
 
-function buildPageUrls(normalized, maxPages = 3) {
+function buildPageUrls(normalized, maxPages = 3, host = 'br.pinterest.com') {
   if (normalized.kind === 'url') {
     return [normalized.searchUrl]
   }
 
   const urls = []
   for (let page = 1; page <= maxPages; page += 1) {
-    urls.push(buildSearchUrl(normalized.query, page, 'br.pinterest.com'))
-  }
-
-  const enableWwwFallback = String(process.env.PINTEREST_WWW_FALLBACK || '1') !== '0'
-  if (enableWwwFallback) {
-    const wwwPages = Math.max(1, Math.min(2, maxPages))
-    for (let page = 1; page <= wwwPages; page += 1) {
-      urls.push(buildSearchUrl(normalized.query, page, 'www.pinterest.com'))
-    }
+    urls.push(buildSearchUrl(normalized.query, page, host))
   }
 
   return uniqueStrings(urls)
@@ -728,23 +775,51 @@ async function searchPinterestPinsInternal(queryOrUrl, options = {}) {
   const maxPages = clamp(options.maxPages, 1, 6)
   const cookieJar = await resolveCookieJar(options)
 
-  const pageUrls = buildPageUrls(normalized, maxPages)
+  const pageUrls = buildPageUrls(normalized, maxPages, 'br.pinterest.com')
   let resolvedSearchUrl = pageUrls[0] || normalized.searchUrl
   const rawCandidates = []
+  const enoughCandidates = Math.max(maxResults, Math.min(60, maxResults * 2))
 
-  for (const pageUrl of pageUrls) {
-    let htmlResponse
-    try {
-      htmlResponse = await fetchText(pageUrl, cookieJar)
-    } catch (_) {
-      continue
+  const collectFromPageUrls = async (urls = []) => {
+    for (const pageUrl of urls) {
+      let htmlResponse
+      try {
+        htmlResponse = await fetchText(pageUrl, cookieJar)
+      } catch (_) {
+        continue
+      }
+
+      resolvedSearchUrl = htmlResponse.finalUrl || resolvedSearchUrl
+      const extracted = extractCandidatesFromHtml(htmlResponse.text, resolvedSearchUrl)
+      rawCandidates.push(...extracted)
+
+      if (rawCandidates.length >= enoughCandidates) return true
     }
+    return rawCandidates.length >= enoughCandidates
+  }
 
-    resolvedSearchUrl = htmlResponse.finalUrl || resolvedSearchUrl
-    const extracted = extractCandidatesFromHtml(htmlResponse.text, resolvedSearchUrl)
-    rawCandidates.push(...extracted)
+  await collectFromPageUrls(pageUrls)
 
-    if (rawCandidates.length >= Math.max(maxResults * 2, 120)) break
+  if (rawCandidates.length === 0 && normalized.kind === 'query') {
+    const enableWwwFallback = String(process.env.PINTEREST_WWW_FALLBACK || '1') !== '0'
+    if (enableWwwFallback) {
+      const wwwPages = Math.max(1, Math.min(maxPages, 2))
+      const wwwUrls = buildPageUrls(normalized, wwwPages, 'www.pinterest.com')
+      await collectFromPageUrls(wwwUrls)
+    }
+  }
+
+  if (rawCandidates.length === 0 && normalized.kind === 'query') {
+    const bingCandidates = await collectPinimgUrlsFromBing(normalized.query, Math.max(maxResults * 2, 30))
+    for (const imageUrl of bingCandidates) {
+      rawCandidates.push({
+        pinId: '',
+        pinUrl: '',
+        imageUrl,
+        score: scorePinimgUrl(imageUrl) + 15
+      })
+      if (rawCandidates.length >= enoughCandidates) break
+    }
   }
 
   if (rawCandidates.length === 0 && normalized.kind === 'url') {

@@ -51,6 +51,25 @@ function normalizeText(value = '') {
     .trim()
 }
 
+function parseQueryAndQuantity(args = []) {
+  let quantity = 1
+  let query = ''
+
+  if (Array.isArray(args) && args.length > 0) {
+    const firstArg = normalizeText(args[0])
+    if (/^\d+$/.test(firstArg)) {
+      quantity = Number.parseInt(firstArg, 10)
+      query = normalizeText(args.slice(1).join(' '))
+    } else {
+      query = normalizeText(args.join(' '))
+    }
+  }
+
+  if (!Number.isFinite(quantity) || quantity < 1) quantity = 1
+  if (quantity > MAX_SEND_IMAGES) quantity = MAX_SEND_IMAGES
+  return { quantity, query }
+}
+
 function isLikelyImageUrl(url) {
   const text = String(url || '').trim()
   if (!/^https?:\/\//i.test(text)) return false
@@ -214,9 +233,9 @@ export default {
   command: ['imagen', 'imagem', 'img', 'image'],
   category: 'search',
   run: async (client, m, args, usedPrefix, command) => {
-    const text = normalizeText(args.join(' '))
+    const { quantity, query: text } = parseQueryAndQuantity(args)
     if (!text) {
-      return client.reply(m.chat, 'Use um termo para pesquisar imagens.', m)
+      return client.reply(m.chat, `Use: ${usedPrefix + command} <quantidade> <termo>`, m)
     }
 
     const lowerText = text.toLowerCase()
@@ -231,13 +250,13 @@ export default {
         await m.reply(DARK_MSG.processing).catch(() => {})
       })
 
-      const results = await getImageSearchResults(text)
+      const results = await getImageSearchResults(text, Math.max(quantity * 8, 40))
       if (!results.length) {
         await m.react('❌').catch(() => {})
         return client.reply(m.chat, `Nenhum resultado encontrado para "${text}".`, m)
       }
 
-      const picked = pickImages(text, results, MAX_SEND_IMAGES)
+      const picked = pickImages(text, results, quantity)
       const selected = picked.selected
       if (selected.length < 1) {
         await m.react('❌').catch(() => {})
@@ -254,7 +273,7 @@ export default {
         try {
           await client.sendAlbumMessage(m.chat, album, { quoted: m })
         } catch (_) {
-          for (const item of selected.slice(0, 4)) {
+          for (const item of selected) {
             await client.sendMessage(
               m.chat,
               { image: { url: item.url }, caption: makeCaption(item, text) },
@@ -263,12 +282,13 @@ export default {
           }
         }
       } else {
-        const first = selected[0]
-        await client.sendMessage(
-          m.chat,
-          { image: { url: first.url }, caption: makeCaption(first, text) },
-          { quoted: m }
-        )
+        for (const item of selected) {
+          await client.sendMessage(
+            m.chat,
+            { image: { url: item.url }, caption: makeCaption(item, text) },
+            { quoted: m }
+          )
+        }
       }
 
       for (const item of selected) {
