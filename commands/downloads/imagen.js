@@ -11,6 +11,7 @@ import {
 const MAX_SEND_IMAGES = 10
 const MIN_SEND_IMAGES = 2
 const API_TIMEOUT_MS = 12000
+const BLOCKED_IMAGE_HOSTS = new Set(['mediaproxy.tvtropes.org'])
 
 const bannedWords = [
   '+18', '18+', 'conteudo adulto', 'conteudo explicito', 'conteudo sexual',
@@ -73,7 +74,15 @@ function parseQueryAndQuantity(args = []) {
 function isLikelyImageUrl(url) {
   const text = String(url || '').trim()
   if (!/^https?:\/\//i.test(text)) return false
-  return /\.(jpe?g|png|gif|webp)(?:\?|$)/i.test(text)
+  if (!/\.(jpe?g|png|gif|webp)(?:\?|$)/i.test(text)) return false
+  try {
+    const parsed = new URL(text)
+    const host = String(parsed.hostname || '').toLowerCase()
+    if (BLOCKED_IMAGE_HOSTS.has(host)) return false
+  } catch (_) {
+    return false
+  }
+  return true
 }
 
 function normalizeImageUrl(url) {
@@ -263,6 +272,23 @@ export default {
         return client.reply(m.chat, `Nenhum resultado valido encontrado para "${text}".`, m)
       }
 
+      const sentItems = []
+      let sendFailures = 0
+      const sendOneByOne = async (items = []) => {
+        for (const item of items) {
+          try {
+            await client.sendMessage(
+              m.chat,
+              { image: { url: item.url }, caption: makeCaption(item, text) },
+              { quoted: m }
+            )
+            sentItems.push(item)
+          } catch (_) {
+            sendFailures += 1
+          }
+        }
+      }
+
       if (selected.length >= MIN_SEND_IMAGES && typeof client.sendAlbumMessage === 'function') {
         const album = selected.map((item) => ({
           type: 'image',
@@ -272,31 +298,28 @@ export default {
 
         try {
           await client.sendAlbumMessage(m.chat, album, { quoted: m })
+          sentItems.push(...selected)
         } catch (_) {
-          for (const item of selected) {
-            await client.sendMessage(
-              m.chat,
-              { image: { url: item.url }, caption: makeCaption(item, text) },
-              { quoted: m }
-            )
-          }
+          await sendOneByOne(selected)
         }
       } else {
-        for (const item of selected) {
-          await client.sendMessage(
-            m.chat,
-            { image: { url: item.url }, caption: makeCaption(item, text) },
-            { quoted: m }
-          )
-        }
+        await sendOneByOne(selected)
       }
 
-      for (const item of selected) {
+      if (sentItems.length < 1) {
+        await m.react('❌').catch(() => {})
+        return client.reply(m.chat, `Nenhum resultado valido encontrado para "${text}".`, m)
+      }
+
+      for (const item of sentItems) {
         markSeenImage(picked.termKey, item.imageHash)
       }
 
       if (picked.usedReplay) {
         await m.reply('Sem novas imagens no cache recente. Enviei resultados repetidos mais antigos.')
+      }
+      if (sendFailures > 0 && sentItems.length < selected.length) {
+        await m.reply(`Enviei ${sentItems.length}/${selected.length}. Alguns links de imagem falharam.`)
       }
 
       await m.react('✅').catch(() => {})
@@ -308,3 +331,4 @@ export default {
     }
   }
 }
+
