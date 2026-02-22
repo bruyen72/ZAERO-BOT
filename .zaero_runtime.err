@@ -1,0 +1,17 @@
+Erro ao gerar QR Code: Error: Timeout ao gerar QR Code
+    at Timeout.<anonymous> (file:///C:/Users/Bruno/Downloads/ZAERO-BOT-main%20final/index.js:171:14)
+    at listOnTimeout (node:internal/timers:581:17)
+    at process.processTimers (node:internal/timers:519:7)
+:net:2139:7)
+    at process.processTicksAndRejections (node:internal/process/task_queues:83:21)
+Emitted 'error' event on Server instance at:
+    at emitErrorNT (node:net:1944:8)
+    at process.processTicksAndRejections (node:internal/process/task_queues:82:21) {
+  code: 'EADDRINUSE',
+  errno: -4091,
+  syscall: 'listen',
+  address: '0.0.0.0',
+  port: 3000
+}
+
+Node.js v20.20.0

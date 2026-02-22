@@ -1,0 +1,33 @@
+import axios from 'axios'
+import fs from 'fs'
+
+const fetchStickerVideo = async (text) => {
+  const response = await axios.get(`https://skyzxu-brat.hf.space/brat-animated`, { params: { text }, responseType: 'arraybuffer' })
+  if (!response.data) throw new Error('Erro ao obter vídeo da API.')
+  return response.data
+}
+
+export default {
+  command: ['bratv'],
+  category: 'sticker',
+  run: async (client, m, args, usedPrefix, command, text) => {
+    try {
+      text = m.quoted?.text || text
+      if (!text) return client.reply(m.chat, '《✧》 Responda a uma mensagem ou digite um texto para criar o adesivo.', m)
+      await m.react('🕒')
+      let user = globalThis.db.data.users[m.sender] || {}
+      const name = user.name || m.sender.split('@')[0]
+      let texto1 = user.metadatos || `✧ ZÆRØ BOT ✧`
+      let texto2 = user.metadatos2 || ``
+      const videoBuffer = await fetchStickerVideo(text)
+      const tmpFile = `./tmp-${Date.now()}.mp4`
+      await fs.writeFileSync(tmpFile, videoBuffer)
+      await client.sendVideoAsSticker(m.chat, tmpFile, m, { packname: texto1, author: texto2 })
+      await fs.unlinkSync(tmpFile)
+      await m.react('✔️')
+    } catch (e) {
+      await m.react('✖️')
+      return m.reply(`> Ocorreu um erro inesperado ao executar o comando *${usedPrefix + command}*. Tente novamente ou entre em contato com o suporte se o problema persistir.\n> [Erro: *${e.message}*]`)
+    }
+  }
+}

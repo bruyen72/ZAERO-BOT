@@ -1,0 +1,39 @@
+# ===================================================================
+# ARQUIVOS IGNORADOS NO BUILD DO RENDER
+# ===================================================================
+
+# Sessões (NUNCA fazer upload de credenciais!)
+Sessions/
+session/
+*.session
+creds.json
+
+# Arquivos temporários
+tmp/
+temp/
+*.tmp
+*.log
+
+# Documentação (não necessário no build)
+*.md
+!README.md
+
+# Configurações locais
+.env.local
+.claude/
+
+# Git
+.git/
+.gitignore
+
+# IDEs
+.vscode/
+.idea/
+
+# Outros bots
+BOTRENAN-main/
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini

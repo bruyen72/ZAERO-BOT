@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jogo da Velha Online</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .container {
+      width: 100%;
+      max-width: 520px;
+      background: #fff;
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+    }
+    h1 {
+      text-align: center;
+      color: #3f51b5;
+      margin-bottom: 4px;
+      font-size: 1.9rem;
+    }
+    .game-subtitle {
+      text-align: center;
+      color: #68708f;
+      font-size: .92rem;
+      margin-bottom: 12px;
+      font-weight: 600;
+    }
+    .codigo-box {
+      text-align: center;
+      border-radius: 12px;
+      background: #f6f7fb;
+      padding: 12px;
+      margin-bottom: 14px;
+    }
+    .codigo-label {
+      font-size: 0.9rem;
+      color: #667;
+      margin-bottom: 6px;
+    }
+    .codigo {
+      font-size: 1.8rem;
+      font-weight: 800;
+      letter-spacing: 3px;
+      color: #3f51b5;
+      font-family: "Courier New", monospace;
+    }
+    .status {
+      text-align: center;
+      font-weight: 700;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 14px;
+      background: #fff3cd;
+      color: #7a5e00;
+    }
+    .status.playing {
+      background: #dff3ff;
+      color: #0b5472;
+    }
+    .status.turn {
+      background: #d8f5de;
+      color: #0f5f29;
+    }
+    .status.finish {
+      background: #ffe0e3;
+      color: #8a2130;
+    }
+    .player {
+      text-align: center;
+      background: #eef5ff;
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 14px;
+    }
+    .board {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+      aspect-ratio: 1;
+    }
+    .cell {
+      border: 3px solid #e2e5ef;
+      border-radius: 10px;
+      background: #fbfbfe;
+      font-size: 2.6rem;
+      font-weight: 800;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+      min-height: 92px;
+      transition: transform .15s ease, border-color .15s ease, background .15s ease;
+    }
+    .cell:hover:not(.taken):not(.disabled) {
+      transform: scale(1.03);
+      border-color: #5c6bc0;
+      background: #eef1ff;
+    }
+    .cell.disabled,
+    .cell.taken {
+      cursor: default;
+    }
+    .cell.x { color: #e53935; }
+    .cell.o { color: #1e88e5; }
+    .cell.win { background: #fff8cf; }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    button {
+      flex: 1;
+      min-width: 150px;
+      border: 0;
+      border-radius: 10px;
+      padding: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn-share {
+      background: #2e7d32;
+      color: #fff;
+    }
+    .btn-rematch {
+      background: #3f51b5;
+      color: #fff;
+      display: none;
+    }
+    .loading,
+    .error {
+      text-align: center;
+      padding: 26px 10px;
+      color: #444;
+    }
+    .error { color: #b3261e; }
+    .auth-form {
+      display: grid;
+      gap: 10px;
+    }
+    .auth-form h2 {
+      font-size: 1rem;
+      text-align: center;
+      color: #3f51b5;
+      margin-bottom: 4px;
+    }
+    .input-group {
+      display: grid;
+      gap: 4px;
+    }
+    .input-group label {
+      font-size: .88rem;
+      color: #555;
+      font-weight: 600;
+    }
+    .input-group input {
+      border: 1px solid #cfd5eb;
+      border-radius: 8px;
+      padding: 10px 12px;
+      outline: none;
+      font-size: .95rem;
+    }
+    .input-group input:focus {
+      border-color: #5c6bc0;
+      box-shadow: 0 0 0 3px rgba(92, 107, 192, .12);
+    }
+    .btn-enter {
+      background: #3f51b5;
+      color: #fff;
+    }
+    .hint {
+      text-align: center;
+      color: #666;
+      font-size: .84rem;
+    }
+    .result-media {
+      text-align: center;
+      margin-bottom: 12px;
+    }
+    .result-media img {
+      max-width: 100%;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .2);
+    }
+    @media (max-width: 500px) {
+      h1 { font-size: 1.5rem; }
+      .codigo { font-size: 1.35rem; }
+      .cell { font-size: 2rem; min-height: 80px; }
+      button { min-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 id="gameTitle">ZAERO | Partida Relampago</h1>
+    <p class="game-subtitle" id="gameSubtitle">Dono: Dono</p>
+    <div class="codigo-box">
+      <div class="codigo-label">Codigo da partida</div>
+      <div class="codigo" id="codigoPartida">------</div>
+    </div>
+    <div id="conteudo" class="loading">Carregando...</div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const codigo = window.location.pathname.split('/').pop().toUpperCase()
+    document.getElementById('codigoPartida').textContent = codigo
+
+    const gameMeta = {
+      brandName: 'ZAERO',
+      ownerName: 'Dono',
+      matchTitle: 'Partida Relampago'
+    }
+
+    function applyGameMeta() {
+      const title = document.getElementById('gameTitle')
+      const subtitle = document.getElementById('gameSubtitle')
+      const brand = String(gameMeta.brandName || 'ZAERO')
+      const matchTitle = String(gameMeta.matchTitle || 'Partida Relampago')
+      const owner = String(gameMeta.ownerName || 'Dono')
+      if (title) title.textContent = `${brand} | ${matchTitle}`
+      if (subtitle) subtitle.textContent = `Dono: ${owner}`
+      document.title = `${brand} | ${matchTitle}`
+    }
+
+    async function loadGameMeta() {
+      try {
+        const resp = await fetch('/jogodavelha-config/' + encodeURIComponent(codigo))
+        if (!resp.ok) return
+        const json = await resp.json()
+        gameMeta.brandName = String(json?.brandName || gameMeta.brandName)
+        gameMeta.ownerName = String(json?.ownerName || gameMeta.ownerName)
+        gameMeta.matchTitle = String(json?.matchTitle || gameMeta.matchTitle)
+      } catch {}
+    }
+
+    let socket
+    let meuSimbolo = null
+    let minhaVez = false
+    let partidaAtiva = false
+    let perfil = null
+    const query = new URLSearchParams(window.location.search)
+
+    function normalizeName(value, max = 60) {
+      return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max)
+    }
+
+    function normalizeJid(value) {
+      const raw = String(value || '').trim().toLowerCase()
+      if (!raw) return ''
+      if (/^\d{8,16}$/.test(raw)) return raw + '@s.whatsapp.net'
+      if (/^\d{8,16}@(s|lid)\.whatsapp\.net$/.test(raw)) return raw
+      return ''
+    }
+
+    function fallbackNameByJid(jid) {
+      const digits = String(jid || '').split('@')[0].replace(/\D/g, '')
+      if (!digits) return 'Jogador'
+      return 'Jogador ' + digits.slice(-4)
+    }
+
+    const autoJid = normalizeJid(query.get('jid'))
+    const autoName = normalizeName(query.get('nome') || '')
+
+    function showError(message) {
+      document.getElementById('conteudo').innerHTML =
+        '<div class="error"><h2>' + message + '</h2><button onclick="location.reload()">Tentar novamente</button></div>'
+    }
+
+    function statusClass() {
+      if (!partidaAtiva) return 'status'
+      return minhaVez ? 'status turn' : 'status playing'
+    }
+
+    function statusText() {
+      if (!partidaAtiva) return 'Aguardando adversario...'
+      return minhaVez ? 'Sua vez!' : 'Aguardando jogada do adversario...'
+    }
+
+    function updateStatus() {
+      const node = document.getElementById('statusBar')
+      if (!node) return
+      node.className = statusClass()
+      node.textContent = statusText()
+    }
+
+    function renderBoard(tabuleiro) {
+      tabuleiro.forEach((value, index) => {
+        const cell = document.querySelector('[data-index="' + index + '"]')
+        if (!cell) return
+        cell.textContent = value
+        cell.className = 'cell ' + (value ? 'taken ' + value.toLowerCase() : '') + (!partidaAtiva || !minhaVez ? ' disabled' : '')
+      })
+    }
+
+    function highlightWin(positions) {
+      positions.forEach((index) => {
+        const cell = document.querySelector('[data-index="' + index + '"]')
+        if (cell) cell.classList.add('win')
+      })
+    }
+
+    function loadResultGif(isWin) {
+      const candidates = isWin
+        ? ['/vence.gif', '/vence.jpg', '/vence.png', '/win.gif']
+        : ['/chora.gif', '/chora.jpg', '/chora.png', '/lose.gif']
+
+      const holder = document.getElementById('resultadoMedia')
+      if (!holder) return
+
+      const img = document.createElement('img')
+      img.alt = isWin ? 'Vitoria' : 'Derrota'
+      let idx = 0
+      img.onerror = () => {
+        idx += 1
+        if (idx < candidates.length) img.src = candidates[idx]
+        else img.style.display = 'none'
+      }
+      img.src = candidates[idx]
+
+      holder.innerHTML = ''
+      holder.appendChild(img)
+    }
+
+    function showResult(data) {
+      const status = document.getElementById('statusBar')
+      if (!status) return
+      status.className = 'status finish'
+
+      if (data.tipo === 'vitoria' && data.vencedor) {
+        const venceu = data.vencedor.simbolo === meuSimbolo
+        status.textContent = venceu ? 'Voce venceu!' : 'Voce perdeu!'
+        loadResultGif(venceu)
+      } else {
+        status.textContent = 'Empate!'
+        const holder = document.getElementById('resultadoMedia')
+        if (holder) holder.innerHTML = ''
+      }
+
+      const btn = document.getElementById('btnRematch')
+      if (btn) btn.style.display = 'block'
+    }
+
+    function render(data) {
+      document.getElementById('conteudo').innerHTML = `
+        <div class="player">
+          <div><strong>${perfil.nome}</strong></div>
+          <div>Voce e: <strong>${data.simbolo}</strong></div>
+          ${data.jogadores < 2 ? '<small>Aguardando outro jogador...</small>' : ''}
+        </div>
+        <div id="statusBar" class="${statusClass()}">${statusText()}</div>
+        <div id="resultadoMedia" class="result-media"></div>
+        <div class="board">
+          ${data.tabuleiro.map((value, index) => `
+            <div
+              class="cell ${value ? 'taken ' + value.toLowerCase() : ''} ${!partidaAtiva || !minhaVez ? 'disabled' : ''}"
+              data-index="${index}"
+              onclick="fazerJogada(${index})"
+            >${value || ''}</div>
+          `).join('')}
+        </div>
+        <div class="actions">
+          <button class="btn-share" onclick="compartilhar()">Compartilhar</button>
+          <button id="btnRematch" class="btn-rematch" onclick="novaPartida()">Revanche</button>
+        </div>
+      `
+    }
+
+    function renderEntryForm() {
+      const savedName = localStorage.getItem('jdv_nome') || autoName || ''
+
+      document.getElementById('conteudo').innerHTML = `
+        <form id="entryForm" class="auth-form">
+          <h2>Informe seu nome para entrar</h2>
+          <div class="input-group">
+            <label for="nome">Nome (obrigatorio)</label>
+            <input id="nome" type="text" maxlength="60" placeholder="Seu nome" value="${savedName.replace(/"/g, '&quot;')}" required />
+          </div>
+          <button class="btn-enter" type="submit">Entrar na partida</button>
+          <p class="hint">Seu WhatsApp e identificado automaticamente quando voce usa o link do bot.</p>
+        </form>
+      `
+
+      const form = document.getElementById('entryForm')
+      form.addEventListener('submit', (ev) => {
+        ev.preventDefault()
+        const nome = normalizeName(document.getElementById('nome').value || '')
+
+        if (!nome) {
+          alert('Informe o nome.')
+          return
+        }
+
+        perfil = { nome, jid: autoJid || '' }
+        localStorage.setItem('jdv_nome', nome)
+        iniciarSocket()
+      })
+    }
+
+    function iniciarSocket() {
+      if (typeof io === 'undefined') {
+        showError('Nao foi possivel carregar Socket.IO')
+        return
+      }
+
+      document.getElementById('conteudo').innerHTML = '<div class="loading">Conectando...</div>'
+
+      socket = io()
+
+      socket.on('connect', () => {
+        socket.emit('entrar-partida', {
+          codigo,
+          nome: perfil.nome,
+          jid: perfil.jid || ''
+        })
+      })
+
+      socket.on('connect_error', () => {
+        showError('Erro de conexao')
+      })
+
+      socket.on('erro', (msg) => {
+        alert(String(msg || 'Erro'))
+        if (!meuSimbolo) renderEntryForm()
+      })
+
+      socket.on('partida-entrou', (data) => {
+        meuSimbolo = data.simbolo
+        partidaAtiva = data.status === 'jogando'
+        minhaVez = data.jogadorAtual === meuSimbolo
+        render(data)
+      })
+
+      socket.on('jogadores-atualizados', (data) => {
+        partidaAtiva = data.status === 'jogando'
+        updateStatus()
+      })
+
+      socket.on('jogada-feita', (data) => {
+        minhaVez = data.proximoJogador === meuSimbolo
+        renderBoard(data.tabuleiro)
+        updateStatus()
+      })
+
+      socket.on('partida-finalizada', (data) => {
+        partidaAtiva = false
+        renderBoard(data.tabuleiro)
+        if (data.vencedor && Array.isArray(data.vencedor.posicoes)) {
+          highlightWin(data.vencedor.posicoes)
+        }
+        showResult(data)
+      })
+
+      socket.on('partida-resetada', (data) => {
+        partidaAtiva = true
+        minhaVez = data.jogadorAtual === meuSimbolo
+        renderBoard(data.tabuleiro)
+        updateStatus()
+        const btn = document.getElementById('btnRematch')
+        if (btn) btn.style.display = 'none'
+        const holder = document.getElementById('resultadoMedia')
+        if (holder) holder.innerHTML = ''
+      })
+
+      socket.on('jogador-saiu', () => {
+        partidaAtiva = false
+        const status = document.getElementById('statusBar')
+        if (status) {
+          status.className = 'status'
+          status.textContent = 'Adversario desconectou.'
+        }
+      })
+    }
+
+    window.fazerJogada = function (posicao) {
+      if (!socket || !partidaAtiva || !minhaVez) return
+      const cell = document.querySelector('[data-index="' + posicao + '"]')
+      if (!cell || cell.classList.contains('taken')) return
+      socket.emit('fazer-jogada', { posicao })
+    }
+
+    window.novaPartida = function () {
+      if (socket) socket.emit('nova-partida')
+    }
+
+    window.compartilhar = function () {
+      const link = window.location.origin + window.location.pathname
+      const titleText = `${gameMeta.brandName || 'ZAERO'} | ${gameMeta.matchTitle || 'Partida Relampago'}`
+      if (navigator.share) {
+        navigator.share({
+          title: titleText,
+          text: `${titleText} - Codigo: ${codigo}`,
+          url: link
+        }).catch(() => {})
+        return
+      }
+
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(link).then(() => {
+          alert('Link copiado.')
+        }).catch(() => {
+          prompt('Copie o link:', link)
+        })
+        return
+      }
+
+      prompt('Copie o link:', link)
+    }
+
+    ;(async () => {
+      await loadGameMeta()
+      applyGameMeta()
+      const savedName = normalizeName(localStorage.getItem('jdv_nome') || '')
+      const initialName = autoName || savedName || fallbackNameByJid(autoJid)
+
+      if (autoJid) {
+        perfil = { nome: initialName, jid: autoJid }
+        iniciarSocket()
+        return
+      }
+
+      renderEntryForm()
+    })()
+  </script>
+</body>
+</html>

@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jogo da Velha Online</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 2em;
+        }
+
+        .codigo-partida {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .codigo-partida h3 {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+
+        .codigo {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+            letter-spacing: 3px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .status-bar {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+
+        .status-aguardando {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-jogando {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .status-sua-vez {
+            background: #d4edda;
+            color: #155724;
+            animation: pulse 1.5s infinite;
+        }
+
+        .status-finalizada {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .info-jogador {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 10px;
+            background: #e3f2fd;
+            border-radius: 8px;
+        }
+
+        .info-jogador span {
+            font-weight: bold;
+            font-size: 1.3em;
+        }
+
+        .player-x { color: #e74c3c; }
+        .player-o { color: #3498db; }
+
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+            aspect-ratio: 1;
+        }
+
+        .cell {
+            background: #f8f9fa;
+            border: 3px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 3em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100px;
+        }
+
+        .cell:hover:not(.taken):not(.disabled) {
+            background: #e3f2fd;
+            border-color: #667eea;
+            transform: scale(1.05);
+        }
+
+        .cell.taken, .cell.disabled {
+            cursor: not-allowed;
+        }
+
+        .cell.x {
+            color: #e74c3c;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .cell.o {
+            color: #3498db;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .cell.winner {
+            background: #fff3cd;
+            animation: winner-pulse 0.6s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.5);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        @keyframes winner-pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            flex: 1;
+            min-width: 120px;
+            padding: 15px;
+            font-size: 1em;
+            font-weight: bold;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-compartilhar {
+            background: #27ae60;
+            color: white;
+        }
+
+        .btn-compartilhar:hover {
+            background: #229954;
+            transform: translateY(-2px);
+        }
+
+        .btn-nova {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-nova:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .loading:after {
+            content: '...';
+            animation: dots 1.5s steps(3, end) infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
+        }
+
+        .erro {
+            text-align: center;
+            padding: 30px;
+            color: #e74c3c;
+        }
+
+        .erro button {
+            margin-top: 20px;
+            background: #667eea;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: bold;
+        }
+
+        @media (max-width: 480px) {
+            h1 { font-size: 1.5em; }
+            .cell { font-size: 2em; min-height: 80px; }
+            .codigo { font-size: 1.5em; }
+            button { min-width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 Jogo da Velha Online</h1>
+        
+        <div class="codigo-partida">
+            <h3>Código da Partida</h3>
+            <div class="codigo" id="codigoPartida">------</div>
+        </div>
+
+        <div id="conteudo" class="loading">
+            Conectando ao servidor
+        </div>
+    </div>
+
+    <!-- Carregar Socket.IO do CDN como fallback -->
+    <script src="/socket.io/socket.io.js" onerror="carregarSocketIOCDN()"></script>
+    <script>
+        let socketCarregado = false;
+        
+        // Fallback para CDN se o servidor não responder
+        function carregarSocketIOCDN() {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.socket.io/4.6.0/socket.io.min.js';
+            script.crossOrigin = 'anonymous';
+            script.onload = () => {
+                console.log('Socket.IO carregado do CDN');
+                socketCarregado = true;
+            };
+            script.onerror = () => mostrarErro();
+            document.head.appendChild(script);
+        }
+        
+        function mostrarErro() {
+            document.getElementById('conteudo').innerHTML = `
+                <div class="erro">
+                    <h2>❌ Erro de Conexão</h2>
+                    <p>Não foi possível conectar ao servidor.</p>
+                    <p><small>Verifique se o servidor está rodando.</small></p>
+                    <button onclick="location.reload()">🔄 Tentar Novamente</button>
+                </div>
+            `;
+        }
+        
+        // Aguardar carregamento do Socket.IO
+        function tentarConectar(tentativas = 0) {
+            if (typeof io !== 'undefined') {
+                iniciarJogo();
+            } else if (tentativas < 20) {
+                setTimeout(() => tentarConectar(tentativas + 1), 100);
+            } else {
+                mostrarErro();
+            }
+        }
+        
+        // Iniciar quando a página carregar
+        window.addEventListener('DOMContentLoaded', () => {
+            const codigo = window.location.pathname.split('/').pop().toUpperCase();
+            document.getElementById('codigoPartida').textContent = codigo;
+            tentarConectar();
+        });
+        
+        function iniciarJogo() {
+            const socket = io({
+                reconnection: true,
+                reconnectionDelay: 1000,
+                reconnectionAttempts: 5
+            });
+            
+            let meuSimbolo = null;
+            let minhaVez = false;
+            let partidaAtiva = false;
+            
+            const codigo = window.location.pathname.split('/').pop().toUpperCase();
+            
+            socket.on('connect', () => {
+                console.log('Conectado ao servidor');
+                socket.emit('entrar-partida', codigo);
+            });
+            
+            socket.on('connect_error', (error) => {
+                console.error('Erro de conexão:', error);
+                mostrarErro();
+            });
+            
+            socket.on('partida-entrou', (data) => {
+                meuSimbolo = data.simbolo;
+                partidaAtiva = data.status === 'jogando';
+                minhaVez = data.jogadorAtual === meuSimbolo;
+                renderizarJogo(data);
+            });
+            
+            socket.on('jogadores-atualizados', (data) => {
+                partidaAtiva = data.status === 'jogando';
+                atualizarStatus();
+            });
+            
+            socket.on('jogada-feita', (data) => {
+                minhaVez = data.proximoJogador === meuSimbolo;
+                atualizarTabuleiro(data.tabuleiro);
+                atualizarStatus();
+            });
+            
+            socket.on('partida-finalizada', (data) => {
+                partidaAtiva = false;
+                atualizarTabuleiro(data.tabuleiro);
+                if (data.vencedor) destacarVencedor(data.vencedor.posicoes);
+                mostrarResultado(data);
+            });
+            
+            socket.on('partida-resetada', (data) => {
+                partidaAtiva = true;
+                minhaVez = data.jogadorAtual === meuSimbolo;
+                atualizarTabuleiro(data.tabuleiro);
+                atualizarStatus();
+                document.getElementById('btnNova').style.display = 'none';
+            });
+            
+            socket.on('jogador-saiu', () => {
+                partidaAtiva = false;
+                const statusBar = document.getElementById('statusBar');
+                if (statusBar) {
+                    statusBar.textContent = '⚠️ Adversário desconectou';
+                    statusBar.className = 'status-bar status-aguardando';
+                }
+            });
+            
+            socket.on('erro', (msg) => alert('❌ ' + msg));
+            
+            window.fazerJogada = function(posicao) {
+                if (!partidaAtiva || !minhaVez) return;
+                const cell = document.querySelector(`[data-index="${posicao}"]`);
+                if (cell && cell.classList.contains('taken')) return;
+                socket.emit('fazer-jogada', { posicao });
+            };
+            
+            window.novaPartida = function() {
+                socket.emit('nova-partida');
+            };
+            
+            window.compartilhar = function() {
+                const url = window.location.href;
+                const texto = `Vamos jogar Jogo da Velha online! Código: ${codigo}`;
+                if (navigator.share) {
+                    navigator.share({ title: 'Jogo da Velha Online', text: texto, url: url })
+                        .catch(() => copiarLink(url));
+                } else {
+                    copiarLink(url);
+                }
+            };
+            
+            function copiarLink(url) {
+                if (navigator.clipboard) {
+                    navigator.clipboard.writeText(url).then(() => {
+                        alert('✅ Link copiado! Cole no WhatsApp.');
+                    }).catch(() => {
+                        prompt('Copie este link:', url);
+                    });
+                } else {
+                    prompt('Copie este link:', url);
+                }
+            }
+            
+            function renderizarJogo(data) {
+                const html = `
+                    <div class="info-jogador">
+                        Você é: <span class="player-${data.simbolo.toLowerCase()}">${data.simbolo}</span>
+                        ${data.jogadores < 2 ? '<br><small>Aguardando adversário...</small>' : ''}
+                    </div>
+                    <div class="status-bar ${getStatusClass()}" id="statusBar">
+                        ${getStatusText()}
+                    </div>
+                    <div class="board" id="board">
+                        ${data.tabuleiro.map((cell, index) => `
+                            <div class="cell ${cell ? 'taken' : ''} ${!partidaAtiva || !minhaVez ? 'disabled' : ''} ${cell.toLowerCase()}" 
+                                 data-index="${index}" onclick="fazerJogada(${index})">${cell}</div>
+                        `).join('')}
+                    </div>
+                    <div class="buttons">
+                        <button class="btn-compartilhar" onclick="compartilhar()">📤 Compartilhar</button>
+                        <button class="btn-nova" onclick="novaPartida()" style="display: none;" id="btnNova">🔄 Revanche</button>
+                    </div>
+                `;
+                document.getElementById('conteudo').innerHTML = html;
+            }
+            
+            function getStatusClass() {
+                if (!partidaAtiva) return 'status-aguardando';
+                return minhaVez ? 'status-sua-vez' : 'status-jogando';
+            }
+            
+            function getStatusText() {
+                if (!partidaAtiva) return '⏳ Aguardando adversário...';
+                return minhaVez ? '✅ Sua vez!' : '⏳ Aguardando adversário...';
+            }
+            
+            function atualizarTabuleiro(tabuleiro) {
+                tabuleiro.forEach((valor, index) => {
+                    const cell = document.querySelector(`[data-index="${index}"]`);
+                    if (cell) {
+                        cell.textContent = valor;
+                        cell.className = `cell ${valor ? 'taken' : ''} ${!partidaAtiva || !minhaVez ? 'disabled' : ''} ${valor.toLowerCase()}`;
+                    }
+                });
+            }
+            
+            function atualizarStatus() {
+                const statusBar = document.getElementById('statusBar');
+                if (statusBar) {
+                    statusBar.className = 'status-bar ' + getStatusClass();
+                    statusBar.textContent = getStatusText();
+                }
+            }
+            
+            function destacarVencedor(posicoes) {
+                posicoes.forEach(pos => {
+                    const cell = document.querySelector(`[data-index="${pos}"]`);
+                    if (cell) cell.classList.add('winner');
+                });
+            }
+            
+            function mostrarResultado(data) {
+                const statusBar = document.getElementById('statusBar');
+                if (statusBar) {
+                    if (data.tipo === 'vitoria') {
+                        const venceuEu = data.vencedor.simbolo === meuSimbolo;
+                        statusBar.textContent = venceuEu ? '🎉 Você venceu!' : '😞 Você perdeu!';
+                        statusBar.className = 'status-bar ' + (venceuEu ? 'status-jogando' : 'status-finalizada');
+                    } else {
+                        statusBar.textContent = '🤝 Empate!';
+                        statusBar.className = 'status-bar status-aguardando';
+                    }
+                }
+                const btnNova = document.getElementById('btnNova');
+                if (btnNova) btnNova.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>

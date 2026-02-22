@@ -1,0 +1,47 @@
+# fly.toml app configuration file generated for zaero-bot on 2026-02-13T11:40:47Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'zaero-bot'
+primary_region = 'gru'
+
+[build]
+
+[env]
+  NODE_ENV = 'production'
+  TZ = 'America/Sao_Paulo'
+  NODE_OPTIONS = '--max-old-space-size=768 --expose-gc'
+  BOT_MAX_VIDEO_BYTES = '20971520'
+  BOT_MAX_JOB_MS = '90000'
+  BOT_QUEUE_MAX_CONCURRENT = '4'
+  BOT_HEAVY_CONCURRENCY = '1'
+  BOT_FFMPEG_CONCURRENCY = '1'
+  BOT_DOWNLOAD_CONCURRENCY = '1'
+  BOT_DOWNLOAD_MAX_QUEUE = '80'
+  BOT_DOWNLOAD_QUEUE_WAIT_TIMEOUT_MS = '45000'
+  BOT_CHAT_QUEUE_MAX_PENDING = '40'
+  BOT_QUEUE_MAX_PENDING = '1200'
+  BOT_HEALTH_RSS_LIMIT_MB = '900'
+  BOT_HEALTH_QUEUE_LIMIT = '5000'
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
+
+  [[http_service.checks]]
+    grace_period = '20s'
+    interval = '10s'
+    method = 'GET'
+    timeout = '2s'
+    path = '/healthz'
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 1024

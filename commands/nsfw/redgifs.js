@@ -1,0 +1,692 @@
+import { fetchMediaSafe, fetchNsfwMedia, resolveNsfwVideo } from '../../lib/mediaFetcher.js'
+import { promises as fs } from 'fs'
+import { DARK_MSG } from '../../lib/system/heavyTaskManager.js'
+import {
+  COMPRESS_THRESHOLD,
+  MAX_DOWNLOAD_VIDEO_BYTES,
+  MAX_WA_VIDEO_BYTES,
+  downloadVideoBuffer,
+  transcodeForWhatsapp,
+  getChatRedgifsHistory,
+  getChatRedgifsUrlHashHistory,
+  hashRedgifsUrl,
+  isValidVideoBuffer,
+  normalizeId,
+  registerSentRedgifsId,
+  registerSentRedgifsUrlHash,
+  withChatNsfwQueue,
+} from '../../lib/nsfwShared.js'
+
+const SEARCH_MAX_ATTEMPTS = 4
+const FETCH_TIMEOUT_MS = 30000
+const MAX_VIDEO_BYTES = Math.max(
+  MAX_WA_VIDEO_BYTES,
+  parsePositiveInt(process.env.BOT_MAX_VIDEO_BYTES, 20 * 1024 * 1024),
+)
+
+const REDGIFS_DEFAULT_SAFETY_EXCLUDED_TERMS = Object.freeze([
+  'gore',
+  'snuff',
+  'blood',
+  'death',
+  'corpse',
+  'scat',
+  'feces',
+  'poop',
+  'urine',
+  'piss',
+  'vomit',
+  'puke',
+  'bestiality',
+  'zoophilia',
+  'animal-sex',
+  'incest',
+  'rape',
+  'raped',
+  'forced',
+  'underage',
+  'cp',
+])
+
+const MEDIA_MODE_ALIASES = Object.freeze({
+  video: 'video',
+  v: 'video',
+  gif: 'gif',
+  g: 'gif',
+  both: 'both',
+  all: 'both',
+  ambos: 'both',
+  todos: 'both',
+})
+
+function isRedgifsUrl(value = '') {
+  return /https?:\/\/(?:www\.)?(?:redgifs\.com|media\.redgifs\.com)\//i.test(String(value))
+}
+
+function normalizeText(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+}
+
+function parsePositiveInt(value, fallback) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback
+  return Math.floor(parsed)
+}
+
+function normalizeSafetyTerm(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function parseEnvBool(value, fallback = true) {
+  const normalized = normalizeText(value)
+  if (!normalized) return fallback
+  if (['1', 'true', 'on', 'yes', 'y'].includes(normalized)) return true
+  if (['0', 'false', 'off', 'no', 'n'].includes(normalized)) return false
+  return fallback
+}
+
+function parseCsvTerms(value = '') {
+  return [...new Set(
+    String(value || '')
+      .split(/[,;|\n]+/)
+      .map((item) => normalizeSafetyTerm(item))
+      .filter(Boolean),
+  )]
+}
+
+function getSafetyBlockedTerms() {
+  const enabled = parseEnvBool(process.env.REDGIFS_SAFETY_FILTER, true)
+  if (!enabled) return []
+
+  const includeDefault = parseEnvBool(process.env.REDGIFS_DEFAULT_SAFETY_FILTER, true)
+  const envTerms = parseCsvTerms(process.env.REDGIFS_SAFETY_EXCLUDED_TERMS || '')
+
+  return [...new Set([
+    ...(includeDefault ? REDGIFS_DEFAULT_SAFETY_EXCLUDED_TERMS : []),
+    ...envTerms,
+  ].map((item) => normalizeSafetyTerm(item)).filter(Boolean))]
+}
+
+function checkSafetyBlocked(media = {}) {
+  const blockedTerms = getSafetyBlockedTerms()
+  if (blockedTerms.length === 0) return { blocked: false, hit: '' }
+
+  const sourceText = [
+    ...(Array.isArray(media?.tags) ? media.tags : []),
+    media?.title || '',
+    media?.pageUrl || '',
+    media?.url || '',
+  ].join(' ')
+
+  const normalized = normalizeSafetyTerm(sourceText)
+  if (!normalized) return { blocked: false, hit: '' }
+
+  for (const term of blockedTerms) {
+    if (!term) continue
+    if (normalized.includes(term)) {
+      return { blocked: true, hit: term }
+    }
+  }
+
+  return { blocked: false, hit: '' }
+}
+
+function isLikelyRedgifsId(value = '') {
+  const normalized = normalizeText(value)
+  return /^[a-z0-9]{12,64}$/.test(normalized)
+}
+
+function normalizeTagToken(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9_-]+/g, '')
+    .replace(/^-+|-+$/g, '')
+    .trim()
+}
+
+function parseTagList(value = '') {
+  return [...new Set(
+    String(value || '')
+      .split(',')
+      .map((item) => normalizeTagToken(item))
+      .filter(Boolean),
+  )]
+}
+
+function parseSearchInput(rawInput = '') {
+  const chunks = String(rawInput || '')
+    .split(/\s+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+  let mode = 'video'
+  let tags = ''
+  const queryParts = []
+
+  for (let index = 0; index < chunks.length; index += 1) {
+    const value = chunks[index]
+    const normalized = normalizeText(value)
+
+    if (index === 0 && MEDIA_MODE_ALIASES[normalized]) {
+      mode = MEDIA_MODE_ALIASES[normalized]
+      continue
+    }
+
+    if (
+      normalized.startsWith('tags:') ||
+      normalized.startsWith('tag:') ||
+      normalized.startsWith('tags=') ||
+      normalized.startsWith('tag=')
+    ) {
+      const explicitTags = value.replace(/^[^:=]+[:=]/i, '').trim()
+      if (explicitTags) tags = explicitTags
+      continue
+    }
+
+    if (
+      normalized.startsWith('search:') ||
+      normalized.startsWith('search=') ||
+      normalized.startsWith('buscar:') ||
+      normalized.startsWith('buscar=') ||
+      normalized.startsWith('busca:') ||
+      normalized.startsWith('busca=')
+    ) {
+      const explicitQuery = value.replace(/^[^:=]+[:=]/i, '').trim()
+      if (explicitQuery) queryParts.push(explicitQuery)
+      continue
+    }
+
+    queryParts.push(value)
+  }
+
+  let query = queryParts.join(' ').trim()
+  const parsedTags = parseTagList(tags)
+  if (!query && tags) {
+    query = parsedTags.join(' ')
+  }
+
+  return { mode, tags: parsedTags.join(','), query }
+}
+
+function allowedMediaTypesForMode(mode = 'video') {
+  if (mode === 'gif') return ['gif', 'video']
+  if (mode === 'both') return ['video', 'gif']
+  return ['video']
+}
+
+function preferredMediaTypeForMode(mode = 'video') {
+  if (mode === 'gif') return 'gif'
+  return 'video'
+}
+
+function buildDownloadHeaders(pageUrl = '') {
+  try {
+    const parsed = new URL(String(pageUrl || ''))
+    return {
+      Referer: parsed.href,
+      Origin: parsed.origin,
+    }
+  } catch {
+    return {}
+  }
+}
+
+function pickBestCandidate(candidates = [], preferredMediaType = 'video') {
+  if (!Array.isArray(candidates) || candidates.length === 0) return null
+
+  if (preferredMediaType === 'gif') {
+    return (
+      candidates.find((item) => item.mediaType === 'gif' && item.url.includes('.gif')) ||
+      candidates.find((item) => item.mediaType === 'gif') ||
+      candidates.find((item) => item.mediaType === 'video' && item.url.includes('hd.mp4')) ||
+      candidates.find((item) => item.mediaType === 'video' && item.url.includes('.mp4') && !item.url.includes('silent')) ||
+      candidates.find((item) => item.mediaType === 'video') ||
+      null
+    )
+  }
+
+  return (
+    candidates.find((item) => item.mediaType === 'video' && item.url.includes('hd.mp4')) ||
+    candidates.find((item) => item.mediaType === 'video' && item.url.includes('.mp4') && !item.url.includes('silent')) ||
+    candidates.find((item) => item.mediaType === 'video' && item.url.includes('.mp4')) ||
+    candidates.find((item) => item.mediaType === 'gif') ||
+    candidates.find((item) => item.mediaType === 'video') ||
+    null
+  )
+}
+
+function humanDuration(seconds) {
+  const total = Math.max(0, Number(seconds || 0))
+  if (!total) return 'desconhecida'
+  const mins = Math.floor(total / 60)
+  const secs = Math.round(total % 60)
+  if (mins <= 0) return `${secs}s`
+  return `${mins}m ${secs}s`
+}
+
+function cleanText(value = '', fallback = 'Sem titulo') {
+  const normalized = String(value || '').replace(/\s+/g, ' ').trim()
+  return normalized || fallback
+}
+
+function isTimeoutLike(error) {
+  const code = String(error?.code || '')
+  if (code === 'FFMPEG_TIMEOUT' || code === 'FFMPEG_QUEUE_TIMEOUT' || code === 'BENCH_TIMEOUT') return true
+  return /timeout/i.test(String(error?.message || ''))
+}
+
+function isTooHeavyError(error) {
+  const text = String(error?.message || '').toLowerCase()
+  const code = String(error?.code || '').toUpperCase()
+  if (code === 'MEDIA_TOO_HEAVY') return true
+  return text.includes('acima do limite') || text.includes('muito grande') || text.includes('too large')
+}
+
+function ensureChatData(chatId) {
+  if (!globalThis.db?.data) return {}
+  if (!globalThis.db.data.chats) globalThis.db.data.chats = {}
+  if (!globalThis.db.data.chats[chatId]) globalThis.db.data.chats[chatId] = {}
+  return globalThis.db.data.chats[chatId]
+}
+
+function buildCaption(media = {}, sourceLabel = 'RedGifs') {
+  return (
+    `*ZÆRØ BOT — ADULTO (18+)*\n\n` +
+    `Título: ${cleanText(media.title)}\n\n` +
+    `⚠️ *AVISO:* O conteúdo 18+ é de sua total responsabilidade. O bot não se responsabiliza pelo uso das mídias. Você é um adulto, use com consciência.`
+  )
+}
+
+function buildTooHeavyMessage(link = '') {
+  if (!link) return 'Muito pesado para processar agora. Tenta outro termo.'
+  return [
+    'Muito pesado para processar agora (limite de 20MB).',
+    `Link original: ${link}`,
+  ].join('\n')
+}
+
+function pickTranscodeOptions(sizeBytes = 0, aggressive = false) {
+  const sizeMb = sizeBytes / 1024 / 1024
+  if (aggressive || sizeMb > 40) {
+    return {
+      preset: 'ultrafast',
+      crf: 30,
+      maxBitrate: 450,
+      scale: '640:-2',
+      timeoutMs: Math.min(90000, parsePositiveInt(process.env.BOT_MAX_JOB_MS, 90000)),
+      limitSeconds: 12,
+    }
+  }
+
+  if (sizeBytes > COMPRESS_THRESHOLD) {
+    return {
+      preset: 'veryfast',
+      crf: 27,
+      maxBitrate: 800,
+      scale: '720:-2',
+      timeoutMs: Math.min(90000, parsePositiveInt(process.env.BOT_MAX_JOB_MS, 90000)),
+      limitSeconds: 15,
+    }
+  }
+
+  return {
+    preset: 'fast',
+    crf: 24,
+    maxBitrate: 1000,
+    timeoutMs: Math.min(90000, parsePositiveInt(process.env.BOT_MAX_JOB_MS, 90000)),
+    limitSeconds: 15,
+  }
+}
+
+async function normalizeForWhatsapp(videoBuffer, logLabel = 'redgifs') {
+  const originalMb = videoBuffer.length / 1024 / 1024
+  console.log(`[RedGifs] ${logLabel}: tamanho original ${originalMb.toFixed(2)}MB`)
+
+  let normalized = await transcodeForWhatsapp(videoBuffer, pickTranscodeOptions(videoBuffer.length, false))
+
+  if (normalized.length > MAX_WA_VIDEO_BYTES) {
+    const largeMb = normalized.length / 1024 / 1024
+    console.warn(`[RedGifs] ${logLabel}: ainda grande (${largeMb.toFixed(2)}MB), tentando compressao agressiva...`)
+    normalized = await transcodeForWhatsapp(normalized, pickTranscodeOptions(normalized.length, true))
+  }
+
+  if (normalized.length > MAX_WA_VIDEO_BYTES) {
+    const finalMb = normalized.length / 1024 / 1024
+    throw new Error(`Video ainda acima do limite apos compressao (${finalMb.toFixed(2)}MB)`)
+  }
+
+  const finalMb = normalized.length / 1024 / 1024
+  console.log(`[RedGifs] ${logLabel}: tamanho final ${finalMb.toFixed(2)}MB`)
+  return normalized
+}
+
+async function sendTranscodedBuffer(client, m, videoBuffer, caption) {
+  await client.sendMessage(
+    m.chat,
+    {
+      video: videoBuffer,
+      caption,
+      gifPlayback: true,
+      mimetype: 'video/mp4',
+      ptv: false,
+    },
+    { quoted: m },
+  )
+  return true
+}
+
+async function sendByUrl(client, m, url, caption, logLabel = 'redgifs-url', headers = {}) {
+  if (!url) return false
+
+  const downloaded = await downloadVideoBuffer(url, {
+    timeoutMs: 45000,
+    maxBytes: MAX_DOWNLOAD_VIDEO_BYTES,
+    headers,
+  })
+
+  if (!isValidVideoBuffer(downloaded)) {
+    throw new Error('Download retornou buffer de video invalido')
+  }
+
+  try {
+    const normalized = await normalizeForWhatsapp(downloaded, logLabel)
+    return sendTranscodedBuffer(client, m, normalized, caption)
+  } catch (error) {
+    if (isTooHeavyError(error)) {
+      const heavyError = new Error('MEDIA_TOO_HEAVY')
+      heavyError.code = 'MEDIA_TOO_HEAVY'
+      throw heavyError
+    }
+    if (downloaded.length <= MAX_WA_VIDEO_BYTES && isTimeoutLike(error)) {
+      console.warn(`[RedGifs] ${logLabel}: timeout no reencode, enviando buffer original como fallback rapido.`)
+      return sendTranscodedBuffer(client, m, downloaded, caption)
+    }
+    throw error
+  }
+}
+
+async function readOptimizedFileBuffer(mediaResult, logLabel = 'redgifs') {
+  const filePath = String(mediaResult?.file || '').trim()
+  if (!filePath) return null
+
+  try {
+    const fromFile = await fs.readFile(filePath)
+    if (!isValidVideoBuffer(fromFile)) return null
+    console.log(`[RedGifs] ${logLabel}: usando arquivo otimizado em cache (${(fromFile.length / 1024 / 1024).toFixed(2)}MB)`)
+    return fromFile
+  } catch (error) {
+    console.warn(`[RedGifs] ${logLabel}: falha ao ler arquivo otimizado (${error.message})`)
+    return null
+  }
+}
+
+async function sendResultProcessed(client, m, mediaResult, caption, logLabel = 'redgifs') {
+  const fallbackUrl = mediaResult?.url || null
+  const fallbackHeaders = buildDownloadHeaders(mediaResult?.pageUrl || '')
+  let videoBuffer = Buffer.isBuffer(mediaResult?.buffer) ? mediaResult.buffer : null
+
+  if ((!videoBuffer || videoBuffer.length === 0) && mediaResult?.optimized === true) {
+    videoBuffer = await readOptimizedFileBuffer(mediaResult, `${logLabel}:file`)
+  }
+
+  if (
+    mediaResult?.optimized === true &&
+    Buffer.isBuffer(videoBuffer) &&
+    videoBuffer.length > 0 &&
+    videoBuffer.length <= MAX_WA_VIDEO_BYTES &&
+    isValidVideoBuffer(videoBuffer)
+  ) {
+    try {
+      return await sendTranscodedBuffer(client, m, videoBuffer, caption)
+    } catch (error) {
+      console.error(`[RedGifs] ${logLabel}: envio direto do arquivo otimizado falhou (${error.message})`)
+      if (!fallbackUrl) throw error
+    }
+  }
+
+  if (!videoBuffer || videoBuffer.length === 0) {
+    if (!fallbackUrl) throw new Error('Sem buffer e sem URL para download')
+    return sendByUrl(client, m, fallbackUrl, caption, `${logLabel}:download`, fallbackHeaders)
+  }
+
+  if (!isValidVideoBuffer(videoBuffer)) {
+    console.warn(`[RedGifs] ${logLabel}: buffer invalido, tentando baixar pela URL...`)
+    if (!fallbackUrl) throw new Error('Buffer invalido e sem URL para recuperar')
+    return sendByUrl(client, m, fallbackUrl, caption, `${logLabel}:recover`, fallbackHeaders)
+  }
+
+  let normalized = null
+  try {
+    normalized = await normalizeForWhatsapp(videoBuffer, logLabel)
+  } catch (error) {
+    console.error(`[RedGifs] ${logLabel}: falha ao normalizar buffer local (${error.message})`)
+    if (videoBuffer.length <= MAX_WA_VIDEO_BYTES && isTimeoutLike(error)) {
+      console.warn(`[RedGifs] ${logLabel}: fallback rapido com buffer local sem reencode.`)
+      normalized = videoBuffer
+    } else {
+      if (!fallbackUrl) throw error
+      await m.reply('Vídeo pesado demais pra celular fraco. Vou mandar versão leve/SD.').catch(() => {})
+      return sendByUrl(client, m, fallbackUrl, caption, `${logLabel}:fallback`, fallbackHeaders)
+    }
+  }
+
+  try {
+    await sendTranscodedBuffer(client, m, normalized, caption)
+    return true
+  } catch (error) {
+    console.error(`[RedGifs] ${logLabel}: envio por buffer falhou (${error.message})`)
+    if (!fallbackUrl) throw error
+    return sendByUrl(client, m, fallbackUrl, caption, `${logLabel}:resend`, fallbackHeaders)
+  }
+}
+
+async function resolveDirectInput(input, options = {}) {
+  const parsed = await resolveNsfwVideo(input)
+  const best = pickBestCandidate(parsed?.candidates || [], options.preferredMediaType || 'video')
+
+  if (!best?.url) {
+    throw new Error('Nao encontrei midia animada neste link.')
+  }
+
+  const mediaBuffer = await fetchMediaSafe(best.url, {
+    validateFirst: true,
+    timeout: FETCH_TIMEOUT_MS,
+    retries: 2,
+    headers: best.headers || {},
+    logPrefix: '[RedGifs]',
+  })
+
+  return {
+    id: normalizeId(parsed?.id || ''),
+    title: parsed?.title || 'RedGifs',
+    duration: parsed?.duration || null,
+    pageUrl: parsed?.pageUrl || input,
+    tags: Array.isArray(parsed?.tags) ? parsed.tags : [],
+    url: best.url,
+    buffer: mediaBuffer || null,
+  }
+}
+
+async function fetchUniqueSearchResult(query, excludeIds = [], options = {}) {
+  return fetchNsfwMedia(query, null, {
+    allowedMediaTypes: options.allowedMediaTypes || ['video'],
+    source: 'redgifs',
+    allowStaticFallback: false,
+    uniqueIds: true,
+    excludeIds,
+    maxPages: 3,
+    perPage: 40,
+    nicheOverride: options.nicheOverride || query,
+    strictQuery: true,
+    redgifsTags: options.tags || '',
+    directIdHint: options.directIdHint || '',
+    preferredMediaType: options.preferredMediaType || 'video',
+    optimizeVideos: true,
+    optimizeMaxSourceBytes: MAX_VIDEO_BYTES,
+  })
+}
+
+export default {
+  command: ['redgifs', 'redgif', 'rgifs', 'redgifts', 'red'],
+  category: 'nsfw',
+  run: async (client, m, args, usedPrefix, command) => {
+    if (m.isGroup && !globalThis.db?.data?.chats?.[m.chat]?.nsfw) {
+      return m.reply(`O conteudo *NSFW* esta desabilitado neste grupo.\n\nUm *administrador* pode habilitar com:\n>> *${usedPrefix}nsfw on*`)
+    }
+
+    const input = args.join(' ').trim()
+    if (!input) {
+      return m.reply(
+        `Use assim:\n` +
+          `- *${usedPrefix + command} <termo>*\n` +
+          `- *${usedPrefix + command} <video|gif|both> <termo>*\n` +
+          `- *${usedPrefix + command} tags:<tag1,tag2> <termo opcional>*\n` +
+          `- *${usedPrefix + command} <url do redgifs>*\n\n` +
+          `Exemplos:\n` +
+          `*${usedPrefix + command} ass*\n` +
+          `*${usedPrefix + command} gif ass*\n` +
+          `*${usedPrefix + command} tags:big-ass,pawg ass*`,
+      )
+    }
+
+    const parsedInput = parseSearchInput(input)
+    if (!parsedInput.query) {
+      return m.reply(`Informe um termo ou URL.\nExemplo: *${usedPrefix + command} ass*`)
+    }
+    const allowedMediaTypes = allowedMediaTypesForMode(parsedInput.mode)
+    const preferredMediaType = preferredMediaTypeForMode(parsedInput.mode)
+    const queryInput = parsedInput.query
+    const directIdHint = isLikelyRedgifsId(queryInput) ? queryInput : ''
+
+    const chatData = ensureChatData(m.chat)
+    const history = getChatRedgifsHistory(chatData)
+    const hashHistory = getChatRedgifsUrlHashHistory(chatData)
+    const attemptedIds = new Set(history.map((item) => normalizeId(item)).filter(Boolean))
+    const attemptedHashes = new Set(hashHistory.map((item) => normalizeId(item)).filter(Boolean))
+
+    try {
+      await m.react('\u23F3').catch(async () => {
+        await m.reply(DARK_MSG.processing).catch(() => {})
+      })
+
+      if (isRedgifsUrl(queryInput)) {
+        await withChatNsfwQueue(m.chat, async () => {
+          const mediaResult = await resolveDirectInput(queryInput, { preferredMediaType })
+          const directId = normalizeId(mediaResult.id || '')
+          const directHash = hashRedgifsUrl(mediaResult.url || mediaResult.pageUrl || queryInput)
+          if ((directId && attemptedIds.has(directId)) || (directHash && attemptedHashes.has(directHash))) {
+            await m.react('\u274C')
+            return m.reply('Esse conteudo ja foi enviado recentemente. Envie outro link.')
+          }
+
+          const safetyCheck = checkSafetyBlocked(mediaResult)
+          if (safetyCheck.blocked) {
+            await m.react('\u26D4')
+            return m.reply(`Conteudo bloqueado pelo filtro de seguranca (${safetyCheck.hit}).`)
+          }
+          const caption = buildCaption(mediaResult, mediaResult.pageUrl || queryInput)
+          let sent = false
+          try {
+            sent = await sendResultProcessed(client, m, mediaResult, caption, command)
+          } catch (error) {
+            if (isTooHeavyError(error)) {
+              await m.react('\u274C')
+              const heavyLink = mediaResult?.pageUrl || mediaResult?.url || queryInput
+              return m.reply(buildTooHeavyMessage(heavyLink))
+            }
+            throw error
+          }
+
+          if (!sent) {
+            await m.react('\u274C')
+            return m.reply('Erro ao enviar esta midia. Tente outro link.')
+          }
+
+          if (directId) registerSentRedgifsId(chatData, directId)
+          if (directHash) registerSentRedgifsUrlHash(chatData, directHash)
+          await m.react('\u2705')
+        })
+        return
+      }
+
+      await withChatNsfwQueue(m.chat, async () => {
+        let sent = false
+        let heavyTooLarge = false
+        let heavyFallbackLink = ''
+
+        for (let attempt = 1; attempt <= SEARCH_MAX_ATTEMPTS; attempt += 1) {
+          let mediaResult = null
+          try {
+            mediaResult = await fetchUniqueSearchResult(queryInput, [...attemptedIds], {
+              allowedMediaTypes,
+              tags: parsedInput.tags,
+              directIdHint,
+              preferredMediaType,
+              nicheOverride: queryInput,
+            })
+          } catch {
+            continue
+          }
+
+          if (!mediaResult) break
+
+          const currentId = normalizeId(mediaResult.id || '')
+          const currentHash = hashRedgifsUrl(mediaResult.url || mediaResult.pageUrl || '')
+          if (currentId && attemptedIds.has(currentId)) continue
+          if (currentHash && attemptedHashes.has(currentHash)) continue
+          if (currentId) attemptedIds.add(currentId)
+          if (currentHash) attemptedHashes.add(currentHash)
+
+          const safetyCheck = checkSafetyBlocked(mediaResult)
+          if (safetyCheck.blocked) {
+            console.log(`[RedGifs] ${command}: item bloqueado por seguranca (${safetyCheck.hit}) id=${currentId || 'sem-id'}`)
+            continue
+          }
+
+          const caption = buildCaption(mediaResult, mediaResult.pageUrl || mediaResult.url || queryInput)
+
+          try {
+            const sentThisAttempt = await sendResultProcessed(client, m, mediaResult, caption, `${command}#${attempt}`)
+            if (!sentThisAttempt) continue
+
+            if (currentId) registerSentRedgifsId(chatData, currentId)
+            if (currentHash) registerSentRedgifsUrlHash(chatData, currentHash)
+            sent = true
+            break
+          } catch (error) {
+            if (isTooHeavyError(error)) {
+              heavyTooLarge = true
+              heavyFallbackLink = mediaResult?.pageUrl || mediaResult?.url || queryInput
+              break
+            }
+            continue
+          }
+        }
+
+        if (!sent) {
+          await m.react('\u274C')
+          if (heavyTooLarge) {
+            return m.reply(buildTooHeavyMessage(heavyFallbackLink))
+          }
+          return m.reply('Nenhuma midia nova/valida encontrada para esse termo no momento.')
+        }
+        await m.react('\u2705')
+      })
+    } catch (error) {
+      await m.react('\u274C')
+      await m.reply(`> Erro ao executar *${usedPrefix + command}*.\n> [Erro: *${error.message || DARK_MSG.timeout}*]`)
+    }
+  },
+}

@@ -1,0 +1,296 @@
+{
+  "users": {
+    "19544618724@s.whatsapp.net": {
+      "name": "Devid Raphael",
+      "exp": 0,
+      "level": 0,
+      "usedcommands": 0,
+      "pasatiempo": "",
+      "description": "",
+      "marry": "",
+      "genre": "",
+      "birth": "",
+      "metadatos": null,
+      "metadatos2": null,
+      "lastCommandTime": 1771724337441
+    },
+    "556584660212@s.whatsapp.net": {
+      "name": "Usuario",
+      "exp": 512,
+      "level": 8,
+      "usedcommands": 3,
+      "pasatiempo": "",
+      "description": "",
+      "marry": "",
+      "genre": "",
+      "birth": "",
+      "metadatos": null,
+      "metadatos2": null,
+      "lastCommandTime": 1771724388395,
+      "minxp": 426,
+      "maxxp": 575
+    },
+    "556581393086@s.whatsapp.net": {
+      "name": "M",
+      "exp": 0,
+      "level": 0,
+      "usedcommands": 0,
+      "pasatiempo": "",
+      "description": "",
+      "marry": "",
+      "genre": "",
+      "birth": "",
+      "metadatos": null,
+      "metadatos2": null,
+      "lastCommandTime": 1771724352092
+    },
+    "556592312494@s.whatsapp.net": {
+      "name": "Nicolas S",
+      "exp": 0,
+      "level": 0,
+      "usedcommands": 0,
+      "pasatiempo": "",
+      "description": "",
+      "marry": "",
+      "genre": "",
+      "birth": "",
+      "metadatos": null,
+      "metadatos2": null,
+      "lastCommandTime": 1771724350997
+    },
+    "556593332610@s.whatsapp.net": {
+      "name": "Jessyca Kelly",
+      "exp": 0,
+      "level": 0,
+      "usedcommands": 0,
+      "pasatiempo": "",
+      "description": "",
+      "marry": "",
+      "genre": "",
+      "birth": "",
+      "metadatos": null,
+      "metadatos2": null,
+      "lastCommandTime": 1771724357770
+    },
+    "556593427037@s.whatsapp.net": {
+      "name": "༒ PAI TA ON-LINE ༒",
+      "exp": 0,
+      "level": 0,
+      "usedcommands": 0,
+      "pasatiempo": "",
+      "description": "",
+      "marry": "",
+      "genre": "",
+      "birth": "",
+      "metadatos": null,
+      "metadatos2": null,
+      "lastCommandTime": 1771724380270
+    }
+  },
+  "chats": {
+    "556584750006-1582425814@g.us": {
+      "users": {
+        "19544618724@s.whatsapp.net": {
+          "stats": {
+            "2026-02-21": {
+              "msgs": 2,
+              "cmds": 0
+            }
+          },
+          "usedTime": null,
+          "lastCmd": 0,
+          "coins": 0,
+          "bank": 0,
+          "afk": -1,
+          "afkReason": "",
+          "characters": []
+        },
+        "556581393086@s.whatsapp.net": {
+          "stats": {
+            "2026-02-21": {
+              "msgs": 2,
+              "cmds": 0
+            }
+          },
+          "usedTime": null,
+          "lastCmd": 0,
+          "coins": 0,
+          "bank": 0,
+          "afk": -1,
+          "afkReason": "",
+          "characters": []
+        },
+        "556592312494@s.whatsapp.net": {
+          "stats": {
+            "2026-02-21": {
+              "msgs": 1,
+              "cmds": 0
+            }
+          },
+          "usedTime": null,
+          "lastCmd": 0,
+          "coins": 0,
+          "bank": 0,
+          "afk": -1,
+          "afkReason": "",
+          "characters": []
+        }
+      },
+      "isBanned": false,
+      "welcome": false,
+      "goodbye": false,
+      "sWelcome": "",
+      "sGoodbye": "",
+      "nsfw": false,
+      "alerts": true,
+      "gacha": true,
+      "economy": true,
+      "adminonly": false,
+      "primaryBot": null,
+      "antilinks": true,
+      "nsfwRedgifsSentIds": [],
+      "nsfwRedgifsSentUrlHashes": [],
+      "nsfwRule34SentIds": []
+    },
+    "556584660212@s.whatsapp.net": {
+      "users": {
+        "556584660212@s.whatsapp.net": {
+          "stats": {
+            "2026-02-21": {
+              "msgs": 6,
+              "cmds": 0
+            }
+          },
+          "usedTime": null,
+          "lastCmd": 0,
+          "coins": 0,
+          "bank": 0,
+          "afk": -1,
+          "afkReason": "",
+          "characters": []
+        }
+      },
+      "isBanned": false,
+      "welcome": false,
+      "goodbye": false,
+      "sWelcome": "",
+      "sGoodbye": "",
+      "nsfw": false,
+      "alerts": true,
+      "gacha": true,
+      "economy": true,
+      "adminonly": false,
+      "primaryBot": null,
+      "antilinks": true,
+      "nsfwRedgifsSentIds": [],
+      "nsfwRedgifsSentUrlHashes": [],
+      "nsfwRule34SentIds": []
+    },
+    "120363405630952055@g.us": {
+      "users": {
+        "556584660212@s.whatsapp.net": {
+          "stats": {
+            "2026-02-21": {
+              "msgs": 8,
+              "cmds": 3
+            }
+          },
+          "usedTime": "2026-02-22T01:39:36.255Z",
+          "lastCmd": 1771724376255,
+          "coins": 7367,
+          "bank": 0,
+          "afk": -1,
+          "afkReason": "",
+          "characters": []
+        }
+      },
+      "isBanned": false,
+      "welcome": false,
+      "goodbye": false,
+      "sWelcome": "",
+      "sGoodbye": "",
+      "nsfw": false,
+      "alerts": true,
+      "gacha": true,
+      "economy": true,
+      "adminonly": false,
+      "primaryBot": null,
+      "antilinks": true,
+      "nsfwRedgifsSentIds": [],
+      "nsfwRedgifsSentUrlHashes": [],
+      "nsfwRule34SentIds": []
+    },
+    "120363419400048291@g.us": {
+      "users": {
+        "556593332610@s.whatsapp.net": {
+          "stats": {
+            "2026-02-21": {
+              "msgs": 1,
+              "cmds": 0
+            }
+          },
+          "usedTime": null,
+          "lastCmd": 0,
+          "coins": 0,
+          "bank": 0,
+          "afk": -1,
+          "afkReason": "",
+          "characters": []
+        },
+        "556593427037@s.whatsapp.net": {
+          "stats": {
+            "2026-02-21": {
+              "msgs": 2,
+              "cmds": 0
+            }
+          },
+          "usedTime": null,
+          "lastCmd": 0,
+          "coins": 0,
+          "bank": 0,
+          "afk": -1,
+          "afkReason": "",
+          "characters": []
+        }
+      },
+      "isBanned": false,
+      "welcome": false,
+      "goodbye": false,
+      "sWelcome": "",
+      "sGoodbye": "",
+      "nsfw": false,
+      "alerts": true,
+      "gacha": true,
+      "economy": true,
+      "adminonly": false,
+      "primaryBot": null,
+      "antilinks": true,
+      "nsfwRedgifsSentIds": [],
+      "nsfwRedgifsSentUrlHashes": [],
+      "nsfwRule34SentIds": []
+    }
+  },
+  "settings": {
+    "556584660212@s.whatsapp.net": {
+      "self": false,
+      "prefix": [
+        "/",
+        "!",
+        ".",
+        "#"
+      ],
+      "commandsejecut": 3,
+      "id": "120363401404146384@newsletter",
+      "nameid": "'ೃ࿔ ყµҡเ ωαɓσƭ'ร - σƒƒเ૮เαℓ ૮ɦαɳɳεℓ .ೃ࿐",
+      "type": "Owner",
+      "link": "https://api.stellarwa.xyz",
+      "banner": "https://cdn.yuki-wabot.my.id/files/07jW.jpeg",
+      "icon": "https://cdn.yuki-wabot.my.id/files/6Z4w.jpeg",
+      "currency": "Yenes",
+      "namebot": "ZÆRØ BOT",
+      "botname": "ZÆRØ BOT",
+      "owner": ""
+    }
+  },
+  "characters": {}
+}
